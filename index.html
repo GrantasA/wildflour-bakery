@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wildflour Bakery</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8C%BE</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #faf5ec;
+    --cream-alt: #f2ead9;
+    --panel: #fffdf8;
+    --ink: #3a3128;
+    --ink-soft: #6b5f52;
+    --terracotta: #c1663b;
+    --terracotta-dark: #a5502a;
+    --terracotta-tint: #f3ddce;
+    --forest: #3f5b47;
+    --forest-tint: #dde6dd;
+    --border: #e5d9c3;
+    --shadow-sm: 0 2px 10px rgba(58, 43, 24, 0.06);
+    --shadow-md: 0 14px 34px rgba(58, 43, 24, 0.10);
+    --shadow-lg: 0 26px 60px rgba(58, 43, 24, 0.16);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background-color: var(--cream);
+    color: var(--ink);
+    line-height: 1.6;
+    position: relative;
+  }
+
+  /* subtle grain texture over the whole page */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0.05;
+    mix-blend-mode: multiply;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.23  0 0 0 0 0.19  0 0 0 0 0.14  0 0 0 0.85 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  h1, h2, h3 {
+    font-family: 'Playfair Display', serif;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  a { color: inherit; }
+
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  /* Header */
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(250, 245, 236, 0.92);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .logo {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo svg { width: 22px; height: 22px; color: var(--terracotta); }
+
+  .nav-links {
+    display: flex;
+    gap: 32px;
+    list-style: none;
+  }
+
+  .nav-links a {
+    text-decoration: none;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--ink-soft);
+    transition: color 0.2s ease;
+  }
+
+  .nav-links a:hover { color: var(--terracotta); }
+
+  .nav-toggle {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 1.6rem;
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  /* Hero */
+  .hero {
+    position: relative;
+    text-align: center;
+    padding: 150px 24px 130px;
+    overflow: hidden;
+    background:
+      linear-gradient(180deg, rgba(30, 22, 14, 0.6), rgba(30, 22, 14, 0.7)),
+      url('images/hero.jpg') center 30% / cover no-repeat;
+  }
+
+  .hero > * { position: relative; z-index: 1; }
+
+  .hero-eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-size: 0.8rem;
+    color: #f0d3b8;
+    font-weight: 600;
+    margin-bottom: 18px;
+  }
+
+  .hero h1 {
+    color: #fff;
+    font-size: clamp(2.6rem, 6vw, 4.4rem);
+    line-height: 1.1;
+    margin-bottom: 22px;
+    text-shadow: 0 4px 28px rgba(0, 0, 0, 0.35);
+  }
+
+  .hero p.tagline {
+    font-size: clamp(1.05rem, 2vw, 1.3rem);
+    color: rgba(255, 255, 255, 0.9);
+    max-width: 560px;
+    margin: 0 auto 40px;
+    font-style: italic;
+    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.25);
+  }
+
+  .btn {
+    display: inline-block;
+    background: var(--terracotta);
+    color: #fff;
+    padding: 15px 36px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    box-shadow: 0 12px 26px rgba(193, 102, 59, 0.3);
+  }
+
+  .btn:hover {
+    background: var(--terracotta-dark);
+    transform: translateY(-3px);
+    box-shadow: 0 16px 32px rgba(193, 102, 59, 0.36);
+  }
+
+  .btn-outline {
+    display: inline-block;
+    background: transparent;
+    color: var(--forest);
+    padding: 13px 34px;
+    border-radius: 999px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1rem;
+    border: 2px solid var(--forest);
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-outline:hover {
+    background: var(--forest);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Sections */
+  section {
+    position: relative;
+    padding: 100px 0;
+  }
+
+  .section-label {
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    font-size: 0.8rem;
+    color: var(--forest);
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    text-align: center;
+    font-size: clamp(2rem, 4vw, 2.6rem);
+    margin-bottom: 50px;
+  }
+
+  /* Wave dividers between sections */
+  .wave {
+    position: absolute;
+    top: -1px;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    line-height: 0;
+  }
+
+  .wave svg { width: 100%; height: 100%; display: block; }
+
+  /* About */
+  .about {
+    background: var(--cream-alt);
+  }
+
+  .about-content {
+    max-width: 700px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .about-content p {
+    font-size: 1.1rem;
+    color: var(--ink-soft);
+  }
+
+  .divider {
+    width: 60px;
+    height: 3px;
+    background: var(--terracotta);
+    margin: 0 auto 40px;
+    border-radius: 2px;
+  }
+
+  .highlights {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 760px;
+    margin: 56px auto 0;
+  }
+
+  .highlight-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 28px 20px;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .highlight-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .highlight-icon {
+    width: 54px;
+    height: 54px;
+    border-radius: 50%;
+    background: var(--terracotta-tint);
+    color: var(--terracotta-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+  }
+
+  .highlight-card:nth-child(2) .highlight-icon {
+    background: var(--forest-tint);
+    color: var(--forest);
+  }
+
+  .highlight-icon svg { width: 26px; height: 26px; }
+
+  .highlight-card h3 {
+    font-size: 1.02rem;
+    margin-bottom: 6px;
+  }
+
+  .highlight-card p {
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+
+  /* Menu */
+  .menu-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 28px;
+  }
+
+  .menu-item {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    overflow: hidden;
+    text-align: center;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+
+  .menu-item:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--shadow-md);
+  }
+
+  .menu-item-photo {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    display: block;
+    background: var(--terracotta-tint);
+  }
+
+  .menu-item-body {
+    padding: 20px 22px 24px;
+  }
+
+  .menu-item-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.12rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .menu-item-price {
+    display: inline-block;
+    font-weight: 600;
+    color: var(--terracotta-dark);
+    font-size: 0.98rem;
+    background: var(--terracotta-tint);
+    padding: 4px 16px;
+    border-radius: 999px;
+  }
+
+  .menu-item:nth-child(even) .menu-item-price {
+    color: var(--forest);
+    background: var(--forest-tint);
+  }
+
+  /* Contact */
+  .contact {
+    background: var(--cream-alt);
+  }
+
+  .contact-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    align-items: stretch;
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: var(--shadow-md);
+  }
+
+  .contact-info h3 {
+    font-size: 1.4rem;
+    margin-bottom: 18px;
+  }
+
+  .info-block {
+    margin-bottom: 26px;
+  }
+
+  .info-block .label {
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 0.75rem;
+    color: var(--forest);
+    font-weight: 600;
+    margin-bottom: 6px;
+  }
+
+  .info-block .value {
+    color: var(--ink-soft);
+    font-size: 1.02rem;
+  }
+
+  .map-embed {
+    margin-top: 26px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    height: 220px;
+    box-shadow: inset 0 2px 10px rgba(58, 43, 24, 0.08);
+  }
+
+  .map-embed iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    filter: sepia(8%) saturate(92%);
+  }
+
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--ink);
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  input, textarea {
+    width: 100%;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    color: var(--ink);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  input:focus, textarea:focus {
+    outline: none;
+    border-color: var(--terracotta);
+    box-shadow: 0 0 0 3px rgba(193, 102, 59, 0.12);
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 110px;
+  }
+
+  .form-status {
+    font-size: 0.9rem;
+    color: var(--forest);
+    font-weight: 500;
+    display: none;
+  }
+
+  /* Footer */
+  footer {
+    text-align: center;
+    padding: 32px 24px;
+    color: var(--ink-soft);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Mobile */
+  @media (max-width: 760px) {
+    .nav-links {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      background: var(--cream);
+      flex-direction: column;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      display: none;
+    }
+
+    .nav-links.open { display: flex; }
+
+    .nav-links a {
+      padding: 16px 24px;
+      width: 100%;
+      display: block;
+      border-top: 1px solid var(--border);
+    }
+
+    .nav-toggle { display: block; }
+
+    .hero { padding: 100px 20px 80px; }
+
+    section { padding: 72px 0; }
+
+    .highlights { grid-template-columns: 1fr; }
+
+    .contact-grid { grid-template-columns: 1fr; gap: 28px; }
+
+    .panel { padding: 28px; }
+
+    .form-row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <nav class="nav">
+    <div class="logo">
+      <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M32 8v40M32 8c-3 6-10 6-10 14s7 8 10 14M32 8c3 6 10 6 10 14s-7 8-10 14M32 44l-6 12M32 44l6 12"/></svg>
+      Wildflour
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">&#9776;</button>
+    <ul class="nav-links" id="navLinks">
+      <li><a href="#about">About</a></li>
+      <li><a href="#menu">Menu</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </nav>
+</header>
+
+<section class="hero">
+  <div class="hero-eyebrow">Est. 2019 &middot; Neighborhood Bakery</div>
+  <h1>Wildflour Bakery</h1>
+  <p class="tagline">Baked slow, with wild ingredients and no shortcuts.</p>
+  <a href="#menu" class="btn">View the Menu</a>
+</section>
+
+<section class="about" id="about">
+  <div class="wave"><svg viewBox="0 0 1440 70" preserveAspectRatio="none"><path d="M0,32 C240,70 480,0 720,24 C960,48 1200,64 1440,24 L1440,0 L0,0 Z" fill="#faf5ec"/></svg></div>
+  <div class="container">
+    <div class="section-label">Our Story</div>
+    <h2 class="section-title">About Wildflour</h2>
+    <div class="about-content">
+      <div class="divider"></div>
+      <p>Wildflour started in a home kitchen in 2019 and grew into a neighborhood staple. Every loaf is made with slow-fermented sourdough starter, local flour, and zero shortcuts. We open at 7am and we're usually sold out by noon &mdash; that's how we like it.</p>
+    </div>
+
+    <div class="highlights">
+      <div class="highlight-card">
+        <div class="highlight-icon">
+          <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M24 12h16l2 8v26a6 6 0 0 1-6 6H28a6 6 0 0 1-6-6V20z"/><path d="M22 26h20"/><path d="M28 34c1.5 2 5 2 6.5 0" opacity="0.8"/><circle cx="27" cy="42" r="1.4" fill="currentColor" stroke="none"/><circle cx="34" cy="46" r="1.2" fill="currentColor" stroke="none"/><circle cx="30" cy="50" r="1.1" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <h3>Slow-Fermented</h3>
+        <p>Our starter takes its time &mdash; every batch rises for hours, never rushed.</p>
+      </div>
+      <div class="highlight-card">
+        <div class="highlight-icon">
+          <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M32 54V14"/><path d="M32 20l-7-5M32 20l7-5M32 28l-7-5M32 28l7-5M32 36l-7-5M32 36l7-5M32 44l-7-5M32 44l7-5"/></svg>
+        </div>
+        <h3>Local Flour</h3>
+        <p>Milled by growers just outside town, sourced week to week.</p>
+      </div>
+      <div class="highlight-card">
+        <div class="highlight-icon">
+          <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="27" width="36" height="10" rx="5"/><circle cx="9" cy="32" r="5"/><circle cx="55" cy="32" r="5"/></svg>
+        </div>
+        <h3>Zero Shortcuts</h3>
+        <p>Mixed, shaped, and baked by hand &mdash; the whole process, every time.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="menu" id="menu">
+  <div class="container">
+    <div class="section-label">Fresh Daily</div>
+    <h2 class="section-title">Menu</h2>
+    <div class="menu-grid">
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/sourdough.jpg" alt="Classic Sourdough Loaf" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Classic Sourdough Loaf</div>
+          <span class="menu-item-price">$9</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/babka.jpg" alt="Cinnamon Swirl Babka" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Cinnamon Swirl Babka</div>
+          <span class="menu-item-price">$12</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/bagels.jpg" alt="Everything Bagel 6-pack" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Everything Bagel 6-pack</div>
+          <span class="menu-item-price">$10</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/cookies.jpg" alt="Chocolate Sea Salt Cookies 4-pack" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Chocolate Sea Salt Cookies 4-pack</div>
+          <span class="menu-item-price">$8</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/croissant.jpg" alt="Almond Croissant" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Almond Croissant</div>
+          <span class="menu-item-price">$5.50</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/galette.jpg" alt="Seasonal Fruit Galette" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Seasonal Fruit Galette</div>
+          <span class="menu-item-price">$14</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/bun.jpg" alt="Morning Bun" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Morning Bun</div>
+          <span class="menu-item-price">$4.50</span>
+        </div>
+      </div>
+
+      <div class="menu-item">
+        <img class="menu-item-photo" src="images/focaccia.jpg" alt="Whole Wheat Focaccia" loading="lazy">
+        <div class="menu-item-body">
+          <div class="menu-item-name">Whole Wheat Focaccia</div>
+          <span class="menu-item-price">$11</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="contact" id="contact">
+  <div class="wave"><svg viewBox="0 0 1440 70" preserveAspectRatio="none"><path d="M0,32 C240,70 480,0 720,24 C960,48 1200,64 1440,24 L1440,0 L0,0 Z" fill="#faf5ec"/></svg></div>
+  <div class="container">
+    <div class="section-label">Visit Us</div>
+    <h2 class="section-title">Contact</h2>
+    <div class="contact-grid">
+      <div class="contact-info panel">
+        <h3>Find Us</h3>
+        <div class="info-block">
+          <div class="label">Address</div>
+          <div class="value">123 Baker Street</div>
+        </div>
+        <div class="info-block">
+          <div class="label">Hours</div>
+          <div class="value">Tue&ndash;Sun, 7am&ndash;1pm<br>Closed Mondays</div>
+        </div>
+        <div class="map-embed">
+          <iframe
+            src="https://www.google.com/maps?q=Ballard+Ave+NW,+Seattle,+WA+98107&output=embed"
+            title="Map showing Wildflour Bakery's neighborhood"
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade"
+            allowfullscreen>
+          </iframe>
+        </div>
+      </div>
+
+      <div class="contact-form panel">
+        <h3>Send a Message</h3>
+        <form id="contactForm">
+          <div class="form-row">
+            <div>
+              <label for="name">Name</label>
+              <input type="text" id="name" name="name" placeholder="Your name" required>
+            </div>
+            <div>
+              <label for="email">Email</label>
+              <input type="email" id="email" name="email" placeholder="you@email.com" required>
+            </div>
+          </div>
+          <div>
+            <label for="message">Message</label>
+            <textarea id="message" name="message" placeholder="Tell us what's on your mind..." required></textarea>
+          </div>
+          <button type="submit" class="btn-outline">Send Message</button>
+          <p class="form-status" id="formStatus">Thanks! We'll get back to you soon.</p>
+        </form>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  &copy; 2026 Wildflour Bakery. All rights reserved.
+</footer>
+
+<script>
+  const navToggle = document.getElementById('navToggle');
+  const navLinks = document.getElementById('navLinks');
+  navToggle.addEventListener('click', () => {
+    navLinks.classList.toggle('open');
+  });
+  navLinks.querySelectorAll('a').forEach(link => {
+    link.addEventListener('click', () => navLinks.classList.remove('open'));
+  });
+
+  const form = document.getElementById('contactForm');
+  const status = document.getElementById('formStatus');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    status.style.display = 'block';
+    form.reset();
+  });
+</script>
+
+</body>
+</html>

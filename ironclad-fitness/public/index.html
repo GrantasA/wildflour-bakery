@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ironclad Fitness — Forged, Not Found</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23ff5a1f%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-family=%27Arial,sans-serif%27 font-size=%2715%27 font-weight=%27bold%27 fill=%27%2314150f%27 text-anchor=%27middle%27%3EIF%3C/text%3E%3C/svg%3E">
+<meta name="description" content="Ironclad Fitness — strength and conditioning at 123 Fitness Ave. Open 5am. Demo page for the embeddable FAQ chat widget.">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --accent: #ff5a1f;
+    --accent-soft: rgba(255, 90, 31, .12);
+    --bg: #0b0c0f;
+    --bg-2: #101216;
+    --card: #14171d;
+    --line: rgba(255, 255, 255, .08);
+    --text: #f3f5f7;
+    --muted: #8d94a1;
+    --maxw: 1120px;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { line-height: 1.05; letter-spacing: -.03em; margin: 0; font-weight: 800; }
+  p { margin: 0; }
+  a { color: inherit; text-decoration: none; }
+
+  .shell { width: 100%; max-width: var(--maxw); margin-inline: auto; padding-inline: 24px; }
+
+  .eyebrow {
+    font-size: 12px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 9px;
+    padding: 14px 26px; border-radius: 999px;
+    font-weight: 700; font-size: 15px; letter-spacing: -.01em;
+    border: 1px solid transparent; cursor: pointer;
+    transition: transform .15s ease, background .15s ease, border-color .15s ease, color .15s ease;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-solid { background: var(--accent); color: #14150f; }
+  .btn-ghost { border-color: var(--line); color: var(--text); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ---------------- nav ---------------- */
+  header {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11, 12, 15, .82);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav { display: flex; align-items: center; gap: 32px; height: 72px; }
+  .logo { display: flex; align-items: center; gap: 11px; font-weight: 900; letter-spacing: -.04em; font-size: 19px; }
+  .mark {
+    width: 34px; height: 34px; border-radius: 9px;
+    background: var(--accent); color: #14150f;
+    display: grid; place-items: center; font-size: 15px; font-weight: 900;
+    transform: rotate(-4deg);
+  }
+  .nav-links { display: flex; gap: 28px; margin-left: auto; font-size: 14.5px; font-weight: 600; color: var(--muted); }
+  .nav-links a { transition: color .15s; }
+  .nav-links a:hover { color: var(--text); }
+  .nav .btn { padding: 10px 20px; font-size: 14px; }
+
+  /* ---------------- hero ---------------- */
+  .hero { position: relative; padding: 96px 0 88px; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: -30% -10% auto auto;
+    width: 720px; height: 720px;
+    background: radial-gradient(circle, rgba(255,90,31,.20), transparent 62%);
+    filter: blur(8px); pointer-events: none;
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(115deg, rgba(255,255,255,.028) 0 1px, transparent 1px 9px);
+    pointer-events: none;
+  }
+  .hero .shell { position: relative; z-index: 1; }
+  .hero h1 {
+    font-size: clamp(48px, 9.5vw, 104px);
+    text-transform: uppercase;
+    margin: 18px 0 22px;
+    max-width: 15ch;
+  }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p.lead { font-size: clamp(17px, 2.1vw, 20px); color: var(--muted); max-width: 52ch; }
+  .hero-cta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 34px; }
+  .hero-note { margin-top: 22px; font-size: 13.5px; color: var(--muted); }
+  .hero-note b { color: var(--text); font-weight: 700; }
+
+  /* ---------------- stats ---------------- */
+  .stats { border-block: 1px solid var(--line); background: var(--bg-2); }
+  .stats .shell { display: grid; grid-template-columns: repeat(4, 1fr); }
+  .stat { padding: 30px 24px; border-left: 1px solid var(--line); }
+  .stat:first-child { border-left: 0; }
+  .stat b { display: block; font-size: 32px; font-weight: 900; letter-spacing: -.04em; }
+  .stat span { font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .1em; font-weight: 700; }
+
+  /* ---------------- sections ---------------- */
+  section { padding: 88px 0; }
+  .section-head { margin-bottom: 42px; }
+  .section-head h2 { font-size: clamp(32px, 5vw, 48px); text-transform: uppercase; margin: 12px 0 14px; }
+  .section-head p { color: var(--muted); max-width: 56ch; }
+
+  /* ---------------- pricing ---------------- */
+  .plans { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; align-items: start; }
+  .plan {
+    background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    padding: 30px 26px 32px; position: relative;
+    transition: transform .18s ease, border-color .18s ease;
+  }
+  .plan:hover { transform: translateY(-4px); border-color: rgba(255,255,255,.16); }
+  .plan.featured { border-color: var(--accent); background: linear-gradient(180deg, var(--accent-soft), var(--card) 46%); }
+  .tag {
+    position: absolute; top: -11px; left: 26px;
+    background: var(--accent); color: #14150f;
+    font-size: 10.5px; font-weight: 900; letter-spacing: .12em; text-transform: uppercase;
+    padding: 5px 11px; border-radius: 99px;
+  }
+  .plan h3 { font-size: 20px; text-transform: uppercase; }
+  .price { display: flex; align-items: baseline; gap: 5px; margin: 14px 0 20px; }
+  .price b { font-size: 46px; font-weight: 900; letter-spacing: -.045em; }
+  .price span { color: var(--muted); font-size: 14px; font-weight: 600; }
+  .plan ul { list-style: none; margin: 0 0 26px; padding: 0; display: grid; gap: 11px; font-size: 14.5px; }
+  .plan li { display: flex; gap: 10px; color: #cfd4dc; }
+  .plan li::before { content: "▸"; color: var(--accent); font-size: 12px; line-height: 1.75; }
+  .plan .btn { width: 100%; justify-content: center; }
+
+  /* ---------------- schedule ---------------- */
+  #classes { background: var(--bg-2); border-block: 1px solid var(--line); }
+  .classes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .class-card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    padding: 26px; display: flex; flex-direction: column; gap: 8px;
+    transition: border-color .18s ease;
+  }
+  .class-card:hover { border-color: var(--accent); }
+  .class-card .when { font-size: 26px; font-weight: 900; letter-spacing: -.04em; color: var(--accent); }
+  .class-card h3 { font-size: 18px; text-transform: uppercase; }
+  .class-card p { color: var(--muted); font-size: 14.5px; }
+  .class-card .days { margin-top: 4px; font-size: 12.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: #cfd4dc; }
+
+  /* ---------------- hours / visit ---------------- */
+  .visit { display: grid; grid-template-columns: 1.1fr 1fr; gap: 22px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 20px; padding: 30px;
+  }
+  .hours { list-style: none; margin: 18px 0 0; padding: 0; }
+  .hours li {
+    display: flex; justify-content: space-between; gap: 16px;
+    padding: 13px 0; border-bottom: 1px solid var(--line);
+    font-size: 15px;
+  }
+  .hours li:last-child { border-bottom: 0; }
+  .hours span:first-child { color: var(--muted); }
+  .hours span:last-child { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .map {
+    border-radius: 14px; margin-top: 18px; padding: 26px;
+    background:
+      linear-gradient(rgba(255,90,31,.10), rgba(255,90,31,.10)),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 26px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 1px, transparent 1px 26px),
+      #0e1014;
+    border: 1px solid var(--line);
+  }
+  .map b { display: block; font-size: 22px; letter-spacing: -.03em; }
+  .map span { color: var(--muted); font-size: 14px; }
+
+  /* ---------------- footer ---------------- */
+  footer { border-top: 1px solid var(--line); padding: 40px 0; color: var(--muted); font-size: 13.5px; }
+  .foot { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
+  .demo-note {
+    margin-top: 22px; padding: 14px 18px; border-radius: 12px;
+    border: 1px dashed rgba(255,255,255,.14); background: rgba(255,255,255,.02);
+    font-size: 13px; line-height: 1.6;
+  }
+  .demo-note b { color: var(--accent); }
+
+  @media (max-width: 900px) {
+    .plans, .classes { grid-template-columns: 1fr; }
+    .visit { grid-template-columns: 1fr; }
+    .stats .shell { grid-template-columns: repeat(2, 1fr); }
+    .stat:nth-child(3) { border-left: 0; }
+    .stat:nth-child(n+3) { border-top: 1px solid var(--line); }
+    .nav-links { display: none; }
+    .nav .btn { margin-left: auto; }
+    section { padding: 64px 0; }
+    .hero { padding: 64px 0 56px; }
+  }
+  @media (max-width: 520px) {
+    .stats .shell { grid-template-columns: 1fr; }
+    .stat { border-left: 0; border-top: 1px solid var(--line); }
+    .stat:first-child { border-top: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="shell nav">
+    <a class="logo" href="#top"><span class="mark">IF</span> IRONCLAD</a>
+    <nav class="nav-links">
+      <a href="#membership">Membership</a>
+      <a href="#classes">Classes</a>
+      <a href="#visit">Hours &amp; Location</a>
+    </nav>
+    <a class="btn btn-solid" href="#membership">Join now</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <div class="hero">
+    <div class="shell">
+      <p class="eyebrow">123 Fitness Ave · Open at 5am</p>
+      <h1>Forged,<br>not <em>found</em>.</h1>
+      <p class="lead">
+        Heavy iron, real coaching, and a floor that's open before your alarm goes off.
+        No mirrors-and-mood-lighting nonsense — just the equipment and the people that get you stronger.
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-solid" href="#membership">See membership plans</a>
+        <a class="btn btn-ghost" href="#classes">Class schedule</a>
+      </div>
+      <p class="hero-note">Questions? Tap the <b>chat bubble</b> in the corner — the front desk answers day or night.</p>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="shell">
+      <div class="stat"><b>5AM</b><span>Weekday open</span></div>
+      <div class="stat"><b>18h</b><span>Longest day</span></div>
+      <div class="stat"><b>3</b><span>Class formats</span></div>
+      <div class="stat"><b>$29</b><span>Starting price</span></div>
+    </div>
+  </div>
+
+  <section id="membership">
+    <div class="shell">
+      <div class="section-head">
+        <p class="eyebrow">Membership</p>
+        <h2>Pick your weight class</h2>
+        <p>Month to month. Every tier includes the full gym floor — the difference is how much coaching comes with it.</p>
+      </div>
+
+      <div class="plans">
+        <div class="plan">
+          <h3>Basic</h3>
+          <div class="price"><b>$29</b><span>/month</span></div>
+          <ul>
+            <li>Full gym floor access</li>
+            <li>Free weights &amp; machines</li>
+            <li>Cardio deck</li>
+            <li>Locker rooms &amp; showers</li>
+          </ul>
+          <a class="btn btn-ghost" href="#visit">Get started</a>
+        </div>
+
+        <div class="plan featured">
+          <span class="tag">Most popular</span>
+          <h3>Premium</h3>
+          <div class="price"><b>$49</b><span>/month</span></div>
+          <ul>
+            <li>Everything in Basic</li>
+            <li>Unlimited group classes</li>
+            <li>Yoga, spin and HIIT</li>
+            <li>Priority class booking</li>
+          </ul>
+          <a class="btn btn-solid" href="#visit">Get started</a>
+        </div>
+
+        <div class="plan">
+          <h3>Elite</h3>
+          <div class="price"><b>$79</b><span>/month</span></div>
+          <ul>
+            <li>Everything in Premium</li>
+            <li>Personal training sessions</li>
+            <li>Programming built for you</li>
+            <li>Movement assessment</li>
+          </ul>
+          <a class="btn btn-ghost" href="#visit">Get started</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="classes">
+    <div class="shell">
+      <div class="section-head">
+        <p class="eyebrow">Schedule</p>
+        <h2>Show up. We'll handle the rest.</h2>
+        <p>Included with Premium and Elite. Coached start to finish, scaled to whatever you walked in with.</p>
+      </div>
+
+      <div class="classes">
+        <div class="class-card">
+          <div class="when">6:00 PM</div>
+          <h3>Yoga</h3>
+          <div class="days">Mon · Wed · Fri</div>
+          <p>Mobility and recovery work that keeps the heavy days sustainable.</p>
+        </div>
+        <div class="class-card">
+          <div class="when">6:00 AM</div>
+          <h3>Spin</h3>
+          <div class="days">Tue · Thu</div>
+          <p>Forty-five minutes of intervals before the rest of the city is awake.</p>
+        </div>
+        <div class="class-card">
+          <div class="when">10:00 AM</div>
+          <h3>HIIT</h3>
+          <div class="days">Sat</div>
+          <p>Full-body conditioning circuits. The loudest hour of our week.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="visit">
+    <div class="shell">
+      <div class="section-head">
+        <p class="eyebrow">Visit</p>
+        <h2>Hours &amp; location</h2>
+        <p>Walk in any time we're open for a tour — no appointment, no sales pitch.</p>
+      </div>
+
+      <div class="visit">
+        <div class="card">
+          <h3>Opening hours</h3>
+          <ul class="hours">
+            <li><span>Monday – Friday</span><span>5:00am – 11:00pm</span></li>
+            <li><span>Saturday</span><span>7:00am – 9:00pm</span></li>
+            <li><span>Sunday</span><span>7:00am – 9:00pm</span></li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Find us</h3>
+          <div class="map">
+            <b>123 Fitness Ave</b>
+            <span>Free parking in the lot out back</span>
+          </div>
+          <p style="margin-top:16px;color:var(--muted);font-size:14.5px;">
+            Not sure which membership fits? Ask the chat assistant in the corner — it knows the hours,
+            the pricing and the whole class schedule.
+          </p>
+        </div>
+      </div>
+
+      <div class="demo-note">
+        <b>Demo page.</b> Ironclad Fitness isn't a real gym. This page exists to show the FAQ chat widget
+        embedded on a live site — it's added with a single <code>&lt;script&gt;</code> tag at the bottom of the HTML,
+        and renders inside a shadow root so none of this page's CSS touches it.
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="shell foot">
+    <span>© Ironclad Fitness · 123 Fitness Ave · (555) 018-4423</span>
+    <span>Forged, not found.</span>
+  </div>
+</footer>
+
+<!-- The entire embed. Drop this line on any site and the widget appears. -->
+<script src="/widget.js" data-title="Ironclad Fitness" data-accent="#ff5a1f" defer></script>
+
+</body>
+</html>

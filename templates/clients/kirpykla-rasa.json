@@ -1,0 +1,45 @@
+{
+  "slug": "kirpykla-rasa",
+  "name": "Kirpykla Rasa",
+  "kind": "barber",
+  "eyebrow": "Kirpykla Vilniaus senamiestyje",
+  "headline": "Jūsų stilius — mūsų rankose",
+  "tagline": "Moterų, vyrų ir vaikų kirpimai, dažymas ir šukuosenos be skubos.",
+  "phone": "+370 600 11222",
+  "email": "info@kirpyklarasa.lt",
+  "address": "Pilies g. 12, Vilnius",
+  "map_query": "Pilies g. 12, Vilnius",
+  "fonts": { "display": "Cormorant Garamond", "body": "Inter" },
+  "palette": {
+    "bg": "#faf6f5",
+    "bg_alt": "#f1e7e7",
+    "panel": "#fffdfd",
+    "ink": "#2e2428",
+    "ink_soft": "#6d5c63",
+    "accent": "#8b5a6b",
+    "accent_dark": "#6f4554",
+    "accent_tint": "#f0dde3",
+    "border": "#e4d3d6"
+  },
+  "about": [
+    "Rasa kerpa jau penkiolika metų ir tiki, kad gera šukuosena pradedama nuo pokalbio, o ne nuo žirklių.",
+    "Dirbame po vieną klientą, todėl niekur neskubame ir visada turime laiko pasitarti dėl formos bei atspalvio."
+  ],
+  "services_intro": "Kainos galutinės — be paslėptų priemokų.",
+  "services": [
+    { "name": "Moterų kirpimas", "price": "30 €", "desc": "Konsultacija, kirpimas, plovimas ir šukuosena." },
+    { "name": "Vyrų kirpimas", "price": "18 €", "desc": "Klasikinis arba mašinėle, su barzdos korekcija." },
+    { "name": "Vaikų kirpimas", "price": "12 €", "desc": "Iki 12 metų, ramiai ir be streso." },
+    { "name": "Dažymas", "price": "nuo 55 €", "desc": "Vienos spalvos dažymas arba atspalvio atnaujinimas." },
+    { "name": "Sruogelės", "price": "nuo 70 €", "desc": "Šviesinimas, balayage, tonavimas." },
+    { "name": "Šventinė šukuosena", "price": "45 €", "desc": "Vestuvėms ir kitoms svarbioms dienoms." }
+  ],
+  "hours": {
+    "mon": "09:00 - 18:00",
+    "tue": "09:00 - 18:00",
+    "wed": "09:00 - 18:00",
+    "thu": "09:00 - 20:00",
+    "fri": "09:00 - 20:00",
+    "sat": "10:00 - 15:00"
+  }
+}

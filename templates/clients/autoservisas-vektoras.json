@@ -1,0 +1,73 @@
+{
+  "slug": "autoservisas-vektoras",
+  "name": "Autoservisas Vektoras",
+  "kind": "auto",
+  "eyebrow": "Autoservisas Kaune",
+  "headline": "Suremontuojame. Paaiškiname. Be staigmenų.",
+  "tagline": "Diagnostika, remontas ir techninė apžiūra — su aiškia kaina prieš darbus.",
+  "phone": "+370 610 33444",
+  "email": "servisas@vektoras.lt",
+  "address": "Taikos pr. 88, Kaunas",
+  "map_query": "Taikos pr. 88, Kaunas",
+  "fonts": {
+    "display": "Archivo",
+    "body": "Inter",
+    "display_fallback": "system-ui, -apple-system, sans-serif"
+  },
+  "palette": {
+    "bg": "#f5f6f8",
+    "bg_alt": "#e8ebf0",
+    "panel": "#ffffff",
+    "ink": "#1d2430",
+    "ink_soft": "#5a6675",
+    "accent": "#1f6feb",
+    "accent_dark": "#1757b8",
+    "accent_tint": "#d9e6fd",
+    "border": "#d4dae3"
+  },
+  "about": [
+    "Esame nedidelis servisas su dviem keltuvais ir dvidešimties metų patirtimi. Dirbame su visomis populiariomis markėmis.",
+    "Prieš remontą visada paskambiname ir pasakome, kiek kainuos. Jei kaina keičiasi — sužinote pirmi, o ne atsiimdami automobilį."
+  ],
+  "services_intro": "Diagnostika įskaičiuojama į remonto kainą.",
+  "services": [
+    {
+      "name": "Kompiuterinė diagnostika",
+      "price": "25 €",
+      "desc": "Klaidų nuskaitymas ir paaiškinimas suprantamai."
+    },
+    {
+      "name": "Tepalų keitimas",
+      "price": "nuo 35 €",
+      "desc": "Su filtru, tepalai — jūsų arba mūsų."
+    },
+    {
+      "name": "Stabdžių remontas",
+      "price": "nuo 60 €",
+      "desc": "Kaladėlės, diskai, skysčio keitimas."
+    },
+    {
+      "name": "Pakabos remontas",
+      "price": "nuo 70 €",
+      "desc": "Amortizatoriai, svirtys, stabilizatoriai."
+    },
+    {
+      "name": "Pasiruošimas TA",
+      "price": "30 €",
+      "desc": "Patikriname viską, kas dažniausiai neleidžia praeiti."
+    },
+    {
+      "name": "Ratų geometrija",
+      "price": "40 €",
+      "desc": "Tikslus suvedimas 3D stendu."
+    }
+  ],
+  "hours": {
+    "mon": "08:00 - 18:00",
+    "tue": "08:00 - 18:00",
+    "wed": "08:00 - 18:00",
+    "thu": "08:00 - 18:00",
+    "fri": "08:00 - 17:00",
+    "sat": "09:00 - 13:00"
+  }
+}

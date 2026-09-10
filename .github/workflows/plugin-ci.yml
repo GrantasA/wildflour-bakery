@@ -1,0 +1,41 @@
+name: Plugin CI
+
+on:
+  push:
+    paths:
+      - 'plugin/**'
+      - '.github/workflows/plugin-ci.yml'
+  pull_request:
+    paths:
+      - 'plugin/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Lint every PHP file
+        working-directory: plugin/local-business-schema-hours
+        run: find . -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Run unit tests
+        working-directory: plugin/local-business-schema-hours
+        run: php tests/test-schedule.php
+
+      - name: Check the readme stable tag matches the plugin version
+        working-directory: plugin/local-business-schema-hours
+        run: |
+          version=$(grep -oP '^\s*\*\s*Version:\s*\K[0-9.]+' local-business-schema-hours.php)
+          stable=$(grep -oP '^Stable tag:\s*\K[0-9.]+' readme.txt)
+          echo "plugin=$version readme=$stable"
+          test "$version" = "$stable"

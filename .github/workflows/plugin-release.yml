@@ -1,0 +1,41 @@
+name: Publish plugin to WordPress.org
+
+# Publishing is fully automated: tag a release and the free build is committed
+# to the WordPress.org SVN repository, which is what makes the plugin appear in
+# every WordPress dashboard's plugin search.
+#
+# Requires two repository secrets: SVN_USERNAME and SVN_PASSWORD.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+
+      - name: Run tests before publishing
+        working-directory: plugin/local-business-schema-hours
+        run: php tests/test-schedule.php
+
+      - name: Strip premium source from the free build
+        working-directory: plugin/local-business-schema-hours
+        run: rm -rf includes/pro tests
+
+      - name: Deploy to the WordPress.org plugin directory
+        uses: 10up/action-wordpress-plugin-deploy@stable
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SLUG: local-business-schema-hours
+          BUILD_DIR: plugin/local-business-schema-hours
+          ASSETS_DIR: plugin/wporg-assets

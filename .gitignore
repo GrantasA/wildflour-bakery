@@ -2,3 +2,7 @@
 .vercel/
 .DS_Store
 Thumbs.db
+
+# WordPress plugin build artifacts
+plugin/**/node_modules/
+plugin/**/*.zip

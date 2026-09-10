@@ -1,0 +1,68 @@
+/* Local Business Schema & Hours - front-end styles. */
+
+.lbsh-hours {
+	display: table;
+	width: 100%;
+	max-width: 28rem;
+	border-collapse: collapse;
+}
+
+.lbsh-row {
+	display: table-row;
+}
+
+.lbsh-day,
+.lbsh-time {
+	display: table-cell;
+	padding: 0.35em 0;
+	vertical-align: top;
+}
+
+.lbsh-time {
+	text-align: right;
+	white-space: nowrap;
+}
+
+.lbsh-row--today .lbsh-day,
+.lbsh-row--today .lbsh-time {
+	font-weight: 700;
+}
+
+.lbsh-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.45em;
+	font-weight: 600;
+	line-height: 1.4;
+}
+
+.lbsh-dot {
+	width: 0.6em;
+	height: 0.6em;
+	border-radius: 50%;
+	background: currentColor;
+	flex: 0 0 auto;
+}
+
+.lbsh-status--open {
+	color: #157347;
+}
+
+.lbsh-status--closed {
+	color: #a52834;
+}
+
+.lbsh-next {
+	font-weight: 400;
+	opacity: 0.85;
+}
+
+@media (prefers-color-scheme: dark) {
+	.lbsh-status--open {
+		color: #4ade80;
+	}
+
+	.lbsh-status--closed {
+		color: #f87171;
+	}
+}

@@ -4,6 +4,60 @@ No clients, no pitching, no calls, no marketing. You do tasks, you get paid on
 a schedule. For someone who does not want to sell, this is the cleanest money
 that exists.
 
+
+---
+
+## Start here: Lithuanian-language work
+
+**No degree, no coding, no interview.** Native fluency in Lithuanian *is* the
+qualification, and it is genuinely scarce — Lithuanian is a low-resource
+language for AI companies, so they actively recruit native speakers.
+
+Roles advertised for exactly this:
+
+| Company | Role | Rate |
+| --- | --- | --- |
+| Alignerr | AI Training for Lithuanian Writers | mid |
+| RWS TrainAI | AI Data Specialist – Lithuanian | ~$9/hr |
+| Invisible Technologies | Lithuanian Language Specialist | $8–65/hr |
+| OpenTrain AI | job board, filter by language | varies |
+
+**Put this in perspective.** $9/hr is about €8.30 — already above the
+Lithuanian minimum of €7.05/hr. At 20 hours a week that is roughly €715/month;
+full time it clears minimum wage outright.
+
+### What the work is
+
+- Writing natural Lithuanian responses to prompts, so the model learns good Lithuanian
+- Reading AI-written Lithuanian and marking what sounds wrong, stilted or machine-translated
+- Comparing two Lithuanian answers and saying which is better, and why
+- Checking translations between Lithuanian and English
+
+You are not judging code or maths. You are judging **whether the Lithuanian is
+any good** — which you know natively and most of the planet does not.
+
+### What actually decides whether you keep the work
+
+Not intelligence. **Rubric compliance.** Every project ships a spec: what counts
+as a 3 versus a 4, how long comments must be, what to flag. Work is
+quality-scored, and low scores mean quiet removal from the project.
+
+Most people who fail skimmed the instructions and rated on instinct. Read the
+spec twice, follow it literally even where you disagree, reference its criteria
+in your comments. That alone puts you in the top tier — and it rewards care
+rather than credentials.
+
+### Apply tonight
+
+1. **Alignerr** — Lithuanian writer roles
+2. **RWS TrainAI** — AI Data Specialist, Lithuanian
+3. **Invisible Technologies** — Lithuanian Language Specialist
+4. **OpenTrain AI** — job board, check weekly
+5. **Prolific** — academic surveys, no expertise needed at all, good filler
+
+Apply to all five. They screen independently, cost nothing but an evening, and
+rejection from one says nothing about the others.
+
 ---
 
 ## Eligibility first — do not waste time here
@@ -141,22 +195,22 @@ crossing midnight, with holiday exceptions) that is good interview material
 
 ## Route yourself
 
-**If you can go three layers deep on at least one real project:**
-Trim your profile to that project plus what you can defend, rehearse the answer
-shape out loud twice, and take the Mercor interview. Highest rate available.
+**Without a technical background**, ignore the Mercor coding track. It screens
+for demonstrable software experience and the interview drills three layers into
+whatever you claim. Language work above pays comparably per hour for the hours
+you can actually get, and has no interview gate.
 
-**If you cannot, yet:**
-Do not spend your one shot. Instead:
-1. Apply to **Alignerr** and the written-test platforms — no interview, no
-   camera, and they still pay.
-2. Publish the **Fiverr gig** (`SELLING.md`) — the work speaks, you never pitch.
-3. Spend two weeks genuinely learning this codebase until one project *is*
-   three layers deep. Then take the Mercor interview.
+**Go: Lithuanian-language work.** It is the section at the top of this file. It
+is the fastest route to money that does not depend on credentials you do not
+have, and your native fluency is a real, scarce qualification rather than a
+consolation prize.
 
-**If your depth is in a non-coding field** — writing, a language, law,
-medicine, finance — say so on Mercor anyway. Credentialed non-coding experts
-are reportedly the highest-paid category on the platform, and the same
-interview and the same four scoring dimensions apply.
+**Prolific alongside it** — academic surveys need no expertise whatsoever.
+Small money, but it starts immediately and fills gaps between projects.
+
+**Mercor is still worth an application** if your depth is in any specialist
+field — law, medicine, finance, a trade, a language. Credentialed non-coding
+experts are reportedly the best-paid category there. Just not the coding track.
 
 ---
 

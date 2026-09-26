@@ -264,3 +264,15 @@ table.cal td, table.cal th { padding: 3px 10px; }
 .flagline .flag { margin-left: 0; }
 .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 560px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- GE slot planner ---------- */
+.slot-bar { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+.slot { border-radius: 8px; padding: 8px 6px; min-height: 52px; font-size: 11px; line-height: 1.25; text-align: center;
+  display: flex; flex-direction: column; justify-content: center; overflow: hidden; border: 1px dashed var(--border); color: var(--muted); }
+.slot b { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot.trade { background: var(--surface-2); border-style: solid; color: var(--text-2); }
+.slot.plan { background: var(--accent-soft); border: 1px solid var(--accent); color: var(--text); }
+.slot.off { opacity: .35; }
+.slot-list { width: 100%; border-collapse: collapse; }
+.slot-list td { white-space: nowrap; }
+@media (max-width: 560px) { .slot-bar { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

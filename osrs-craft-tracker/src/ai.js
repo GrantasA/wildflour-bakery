@@ -55,7 +55,104 @@ function prepare(key, buckets, step) {
   return { key, buckets, step, hi, lo, mid, vols, typVol };
 }
 
-function features(s, t) {
+const BASE_DIM = LAGS.length + 6;
+const CONTEXT_MARGIN = 0.0002;
+const EXTRA_DIM = 5;
+
+// Whole-market and related-item context for a dataset (see buildContext).
+// Returns EXTRA_DIM numbers; zeros when nothing is known.
+function contextFeatures(ctx, s, t) {
+  const out = new Array(EXTRA_DIM).fill(0);
+  if (!ctx) return out;
+  const ts = s.buckets[t].ts, step = s.step;
+  const move = (level, lag) => {
+    const a = level.get(ts), b = level.get(ts - lag * step);
+    return a != null && b != null ? a - b : 0;
+  };
+  // 1-2: the whole market's move over the last 6 and 24 buckets, in units of its usual swing
+  out[0] = clamp(move(ctx.market, 6) / (ctx.marketVol * Math.sqrt(6)), -6, 6);
+  out[1] = clamp(move(ctx.market, 24) / (ctx.marketVol * Math.sqrt(24)), -6, 6);
+  // 3-4: items in the same recipes (ingredients <-> product)
+  const rel = ctx.related.get(s.key);
+  if (rel) {
+    out[2] = clamp(move(rel.level, 6) / (rel.vol * Math.sqrt(6)), -6, 6);
+    out[3] = clamp(move(rel.level, 24) / (rel.vol * Math.sqrt(24)), -6, 6);
+  }
+  // 5: is the craft margin (product vs ingredients) unusually wide or narrow right now?
+  const m = ctx.margin.get(s.key);
+  if (m) {
+    const now = m.get(ts);
+    const hist = [];
+    for (let j = 1; j <= 48; j++) { const v = m.get(ts - j * step); if (v != null) hist.push(v); }
+    if (now != null && hist.length >= 12) {
+      const mu = hist.reduce((a, v) => a + v, 0) / hist.length;
+      const sd = Math.sqrt(hist.reduce((a, v) => a + (v - mu) ** 2, 0) / hist.length) || 1e-3;
+      out[4] = clamp((now - mu) / sd, -6, 6);
+    }
+  }
+  return out;
+}
+
+// Build market / related-item / margin lookups for one bucket size.
+//   series: prepared series; recipes: [{ inputs: [{item, qty}], output: {item, qty} }]
+function buildContext(series, recipes) {
+  const byName = new Map(series.map((s) => [s.key, s]));
+  const midAt = (s) => {
+    const m = new Map();
+    s.buckets.forEach((b, i) => { if (!Number.isNaN(s.mid[i])) m.set(b.ts, s.mid[i]); });
+    return m;
+  };
+  const mids = new Map(series.map((s) => [s.key, midAt(s)]));
+  // an equal-weight index of the given items' log price changes
+  const index = (names) => {
+    const diffs = new Map();
+    for (const n of names) {
+      const s = byName.get(n);
+      if (!s) continue;
+      for (let i = 1; i < s.buckets.length; i++) {
+        const d = s.mid[i] - s.mid[i - 1];
+        if (!Number.isFinite(d)) continue;
+        const e = diffs.get(s.buckets[i].ts) || [0, 0];
+        e[0] += d; e[1]++;
+        diffs.set(s.buckets[i].ts, e);
+      }
+    }
+    const level = new Map();
+    let acc = 0, sum2 = 0, n = 0;
+    for (const ts of [...diffs.keys()].sort((a, b) => a - b)) {
+      const [d, c] = diffs.get(ts);
+      const avg = d / c;
+      acc += avg; sum2 += avg * avg; n++;
+      level.set(ts, acc);
+    }
+    return { level, vol: Math.sqrt(sum2 / Math.max(1, n)) || 1e-4 };
+  };
+  const market = index(series.map((s) => s.key));
+  const relNames = new Map();
+  const link = (a, b) => { if (a !== b) { if (!relNames.has(a)) relNames.set(a, new Set()); relNames.get(a).add(b); } };
+  const margin = new Map();
+  for (const r of recipes || []) {
+    const names = [r.output.item, ...r.inputs.map((i) => i.item)];
+    for (const a of names) for (const b of names) link(a, b);
+    const members = names.map((n) => mids.get(n));
+    if (members.some((m) => !m)) continue;
+    const series_ = new Map();
+    for (const [ts, out] of members[0]) {
+      let cost = 0, ok = true;
+      r.inputs.forEach((inp, i) => {
+        const v = members[i + 1].get(ts);
+        if (v == null) ok = false; else cost += inp.qty * Math.exp(v);
+      });
+      if (ok && cost > 0) series_.set(ts, out + Math.log(r.output.qty) - Math.log(cost));
+    }
+    for (const n of names) if (!margin.has(n)) margin.set(n, series_);
+  }
+  const related = new Map();
+  for (const [n, set] of relNames) related.set(n, index([...set]));
+  return { market: market.level, marketVol: market.vol, related, margin };
+}
+
+function features(s, t, ctx) {
   if (t < LOOKBACK || Number.isNaN(s.hi[t]) || Number.isNaN(s.hi[t - LOOKBACK]) || Number.isNaN(s.lo[t])) return null;
   let sum = 0, sum2 = 0, n = 0;
   for (let i = t - LOOKBACK + 1; i <= t; i++) {
@@ -78,6 +175,8 @@ function features(s, t) {
   const hour = ((s.buckets[t].ts / 3600) % 24) * (2 * Math.PI / 24);
   f.push(Math.sin(hour), Math.cos(hour));
   f.push(Math.log(vol));
+  // context signals go last so the distance can include or ignore them
+  f.push(...contextFeatures(ctx, s, t));
   return f;
 }
 
@@ -176,6 +275,13 @@ const horizonFor = (windowSec, step) => Math.max(1, Math.min(96, Math.round(wind
 class PriceAI {
   constructor() {
     this.cache = new Map(); // `${step}:${H}` -> dataset
+    this.recipes = [];
+  }
+
+  // Recipes tell the AI which items move together (ingredients <-> product).
+  setRecipes(recipes) {
+    const key = JSON.stringify(recipes.map((r) => [r.output.item, r.inputs.map((i) => i.item)]));
+    if (key !== this.recipesKey) { this.recipes = recipes; this.recipesKey = key; this.cache.clear(); }
   }
 
   // items: [{ name, series5m, series1h }] for everything tracked.
@@ -191,16 +297,18 @@ class PriceAI {
       // learn from the long saved history, not just the recent window
       const buckets = step === 300 ? (it.history5m || it.series5m) : (it.history1h || it.series1h);
       if (!buckets || buckets.length < LOOKBACK + H + 10) continue;
-      const s = prepare(it.name, buckets, step);
-      const si = series.push(s) - 1;
+      series.push(prepare(it.name, buckets, step));
+    }
+    const ctx = buildContext(series, this.recipes);
+    series.forEach((s, si) => {
       // Neighbouring moments are near-duplicates; cap each item at ~600 samples
       // so search stays fast as the saved history grows.
-      const stride = Math.max(step === 300 ? 2 : 1, Math.ceil((buckets.length - LOOKBACK - H) / 600));
-      for (let t = LOOKBACK; t + H < buckets.length; t += stride) {
-        const f = features(s, t);
+      const stride = Math.max(step === 300 ? 2 : 1, Math.ceil((s.buckets.length - LOOKBACK - H) / 600));
+      for (let t = LOOKBACK; t + H < s.buckets.length; t += stride) {
+        const f = features(s, t, ctx);
         if (f) rows.push({ si, t, f });
       }
-    }
+    });
     // standardise each feature so no single one dominates the distance
     const dim = rows.length ? rows[0].f.length : 0;
     const mean = new Float64Array(dim), sd = new Float64Array(dim);
@@ -209,19 +317,23 @@ class PriceAI {
     for (let d = 0; d < dim; d++) sd[d] = Math.sqrt(sd[d]) || 1;
     const X = new Float64Array(rows.length * dim);
     rows.forEach((r, i) => { for (let d = 0; d < dim; d++) X[i * dim + d] = (r.f[d] - mean[d]) / sd[d]; });
-    const ds = { version, step, H, series, rows, X, dim, mean, sd,
-      backtest: (hit && hit.backtest) || {}, bestK: (hit && hit.bestK) || {}, memo: new Map(), nbrMemo: new Map() };
+    const ds = { version, step, H, series, rows, X, dim, mean, sd, ctx,
+      backtest: (hit && hit.backtest) || {}, bestK: (hit && hit.bestK) || {},
+      // whether the market / related-item signals help, per side (decided by the backtest)
+      useContext: (hit && hit.useContext) || {},
+      memo: new Map(), nbrMemo: new Map() };
     this.cache.set(key, ds);
     return ds;
   }
 
-  neighbours(ds, f, filter, k = K) {
+  neighbours(ds, f, filter, k = K, useContext = false) {
     const q = f.map((v, d) => (v - ds.mean[d]) / ds.sd[d]);
+    const dims = useContext ? ds.dim : Math.min(ds.dim, BASE_DIM);
     const best = []; // [dist, idx], kept sorted, size <= k
     for (let i = 0; i < ds.rows.length; i++) {
       if (filter && !filter(ds.rows[i])) continue;
       let dist = 0;
-      for (let d = 0; d < ds.dim; d++) {
+      for (let d = 0; d < dims; d++) {
         const z = ds.X[i * ds.dim + d] - q[d];
         dist += z * z;
         if (best.length === k && dist >= best[k - 1][0]) break;
@@ -340,7 +452,7 @@ class PriceAI {
     if (ds.memo.has(memoKey)) return ds.memo.get(memoKey);
     const s = prepare(item.name, buckets, step);
     const t = buckets.length - 1;
-    const f = features(s, t);
+    const f = features(s, t, ds.ctx);
     if (!f) return null;
     // Anchor on the live market when it's fresh, else the chart's last prices.
     const l = item.latest || {};
@@ -350,10 +462,11 @@ class PriceAI {
     // The similar-chart search depends only on the chart, so share it across
     // quantities, risk settings and both sides.
     const k = ds.bestK[side] || K;
-    const nk = `${item.name}:${k}`;
+    const useCtx = !!ds.useContext[side];
+    const nk = `${item.name}:${k}:${useCtx}`;
     let nbrs = ds.nbrMemo.get(nk);
     if (!nbrs) {
-      nbrs = this.neighbours(ds, f, (r) => !(ds.series[r.si].key === item.name && r.t > t - H), k);
+      nbrs = this.neighbours(ds, f, (r) => !(ds.series[r.si].key === item.name && r.t > t - H), k, useCtx);
       ds.nbrMemo.set(nk, nbrs);
     }
     if (nbrs.length < 10) return null;
@@ -373,6 +486,7 @@ class PriceAI {
       curve: d.curve.map((c) => ({ price: c.price, ev: c.ev, pFill: c.pFill })),
       range: d.range,
       neighbours: nbrs.length,
+      usesContext: useCtx,
       windowSec,
       spark: buckets.slice(-Math.min(buckets.length, step === 300 ? 144 : 72)).map((b) => [b.ts, b.avgHigh, b.avgLow]),
       backtest: ds.backtest[side] || null,
@@ -394,11 +508,17 @@ class PriceAI {
     const tests = ds.rows.filter((r) => r.t >= split.get(r.si));
     const stride = Math.max(1, Math.floor(tests.length / maxTests));
     const maxK = K_CHOICES[K_CHOICES.length - 1];
-    const acc = new Map(K_CHOICES.map((k) => [k, { n: 0, gain: 0, wins: 0, pred: 0, real: 0 }]));
+    // Tune: every neighbour count, with and without the market/related signals.
+    const variants = [];
+    for (const ctx of [false, true]) for (const k of K_CHOICES) variants.push({ ctx, k, key: `${ctx ? 'ctx' : 'base'}:${k}` });
+    const acc = new Map(variants.map((v) => [v.key, { ...v, n: 0, gain: 0, wins: 0, pred: 0, real: 0 }]));
     for (let i = 0; i < tests.length; i += stride) {
       const r = tests[i];
       const s = ds.series[r.si];
-      const all = this.neighbours(ds, r.f, (c) => c.t + H < split.get(c.si), maxK);
+      const allBy = {
+        false: this.neighbours(ds, r.f, (c) => c.t + H < split.get(c.si), maxK, false),
+        true: this.neighbours(ds, r.f, (c) => c.t + H < split.get(c.si), maxK, true),
+      };
       const refLog = s.hi[r.t], lowLog = s.lo[r.t];
       const qtyRel = 0.5; // half a typical bucket's volume
       const fut = future(s, r.t, H);
@@ -412,34 +532,41 @@ class PriceAI {
       };
       const rulePrice = sell ? Math.max(1, Math.round(base) - 1) : Math.round(Math.exp(lowLog)) + 1;
       const ruleV = realised(Math.log(rulePrice) - refLog).v;
-      for (const k of K_CHOICES) {
-        const nbrs = all.slice(0, k);
+      for (const v of variants) {
+        const nbrs = allBy[v.ctx].slice(0, v.k);
         if (nbrs.length < 10) continue;
         const d = this.decide(ds, nbrs, refLog, lowLog, qtyRel, share, s.key, { side, riskAversion });
         const a = realised(d.best.x);
         const gain = (sell ? a.v - ruleV : ruleV - a.v) / base; // positive = AI did better
-        const m = acc.get(k);
+        const m = acc.get(v.key);
         m.gain += gain; m.n++;
         if (gain >= 0) m.wins++;
         m.pred += d.best.pFill;
         m.real += a.filled ? 1 : 0;
       }
     }
-    let bestK = null;
-    const byK = {};
-    for (const [k, m] of acc) {
+    let best = null;
+    const byVariant = {};
+    for (const [key, m] of acc) {
       if (!m.n) continue;
-      byK[k] = m.gain / m.n;
-      if (bestK == null || byK[k] > byK[bestK]) bestK = k;
+      byVariant[key] = m.gain / m.n;
+      // the extra signals must earn their place by a real margin (0.02% of price),
+      // not by noise
+      if (!best || byVariant[key] > byVariant[best.key] + (m.ctx && !best.ctx ? CONTEXT_MARGIN : 0)) best = m;
     }
-    if (bestK == null) return null;
-    const m = acc.get(bestK);
+    if (!best) return null;
+    const m = best;
+    const bestK = m.k;
+    const baseBest = Math.max(...K_CHOICES.map((k) => byVariant[`base:${k}`] ?? -Infinity));
+    const ctxBest = Math.max(...K_CHOICES.map((k) => byVariant[`ctx:${k}`] ?? -Infinity));
     const res = {
       side,
       tests: m.n,
       windowSec,
       k: bestK,
-      byK,
+      usesContext: m.ctx,
+      contextGain: Number.isFinite(ctxBest) && Number.isFinite(baseBest) ? ctxBest - baseBest : null,
+      byVariant,
       uplift: m.gain / m.n, // fraction of price better than the simple rule
       winRate: m.wins / m.n,
       predictedFill: m.pred / m.n,
@@ -449,10 +576,11 @@ class PriceAI {
     };
     ds.backtest[side] = res;
     ds.bestK[side] = bestK;
+    ds.useContext[side] = m.ctx;
     ds.memo.clear();
     ds.nbrMemo.clear();
     return res;
   }
 }
 
-module.exports = { PriceAI, features, prepare, future, fillTime, tailMean, tailMeanSorted, K_CHOICES, stepFor };
+module.exports = { PriceAI, features, prepare, future, fillTime, tailMean, tailMeanSorted, buildContext, contextFeatures, K_CHOICES, stepFor, BASE_DIM };

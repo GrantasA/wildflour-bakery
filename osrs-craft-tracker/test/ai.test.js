@@ -152,3 +152,33 @@ test('a trade started from the AI plan gets "keep" advice straight away (plan an
     Date.now = realNow;
   }
 });
+
+test('context signals: market, related items and craft margin', () => {
+  const { buildContext, contextFeatures, prepare } = require('../src/ai');
+  // A (ingredient) jumps 10% in the last 6 buckets; B (product) is flat
+  const mk = (name, jump) => {
+    const b = Array.from({ length: 80 }, (_, k) => {
+      const p = 1000 * (k >= 74 ? 1 + jump : 1) * (1 + 0.001 * Math.sin(k));
+      return { ts: k * 300, avgHigh: p, avgLow: p * 0.99, highVol: 5, lowVol: 5 };
+    });
+    return prepare(name, b, 300);
+  };
+  const A = mk('A', 0.1), B = mk('B', 0), C = mk('C', 0);
+  const ctx = buildContext([A, B, C], [{ inputs: [{ item: 'A', qty: 1 }], output: { item: 'B', qty: 1 } }]);
+  const fB = contextFeatures(ctx, B, 79);
+  assert.ok(fB[2] > 1, `related move for B should be strongly up, got ${fB[2]}`);
+  assert.ok(fB[4] < -1, `B's margin (B vs cost of A) should look unusually narrow, got ${fB[4]}`);
+  const fC = contextFeatures(ctx, C, 79);
+  assert.strictEqual(fC[2], 0, 'C has no related items');
+  assert.ok(fC[0] > 0, 'the whole market moved up because A did');
+});
+
+test('backtest decides whether the context signals earn their place', () => {
+  const ai = new PriceAI();
+  ai.setRecipes([{ inputs: [{ item: 'Item 0', qty: 1 }], output: { item: 'Item 1', qty: 1 } }]);
+  const bt = ai.runBacktest(items, 1, 2 * 3600, 0.5, { side: 'sell', maxTests: 60 });
+  assert.strictEqual(typeof bt.usesContext, 'boolean');
+  assert.ok(bt.contextGain === null || Number.isFinite(bt.contextGain));
+  const s = ai.suggest(items, 1, items[1], 2, 2 * 3600, 0.5, { side: 'sell' });
+  assert.strictEqual(s.usesContext, bt.usesContext);
+});

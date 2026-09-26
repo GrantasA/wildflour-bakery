@@ -5,7 +5,8 @@ const els = {
   rows: $('rows'), picks: $('picks'), positions: $('positions'), history: $('history'), chart: $('chart'),
   live: $('live'), liveText: $('liveText'), mock: $('mock'), hidden: $('hidden'), tooltip: $('tooltip'),
   settings: $('settings'), settingsBtn: $('settingsBtn'),
-  aiBar: $('aiBar'), useAI: $('useAI'), risk: $('risk'),
+  aiBar: $('aiBar'), useAI: $('useAI'), risk: $('risk'), slots: $('slots'),
+  slotsCard: $('slotsCard'), slotBar: $('slotBar'), slotPicks: $('slotPicks'), slotSummary: $('slotSummary'),
   objective: $('objective'), sellWithin: $('sellWithin'), maxWait: $('maxWait'), maxActive: $('maxActive'), capital: $('capital'), share: $('share'),
   search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
   dialog: $('startDialog'), form: $('startForm'), startRecipe: $('startRecipe'), startBatch: $('startBatch'),
@@ -55,10 +56,11 @@ function when(ts) {
 }
 
 // ---------- settings ----------
-const SETTINGS = ['objective', 'risk', 'sellWithin', 'maxWait', 'maxActive', 'capital', 'share'];
+const SETTINGS = ['objective', 'risk', 'slots', 'sellWithin', 'maxWait', 'maxActive', 'capital', 'share'];
 function query() {
   const p = new URLSearchParams({
     objective: els.objective.value, maxWait: els.maxWait.value, sellWithin: els.sellWithin.value, risk: els.risk.value,
+    slots: els.slots.value,
     maxActive: els.maxActive.value, share: els.share.value, ai: els.useAI.checked ? '1' : '0',
   });
   const cap = parseGp(els.capital.value);
@@ -119,6 +121,7 @@ function render() {
   renderStatus();
   renderKpis();
   renderAI();
+  renderSlots();
   renderPicks();
   renderPositions();
   renderTable();
@@ -174,6 +177,12 @@ function renderAI() {
       const up = bt.uplift * 100;
       facts.push(`Backtest (${bt.tests} moments, ${dur(bt.windowSec)} window): <b class="${cls(up)}">${up >= 0 ? '+' : ''}${up.toFixed(2)}%</b> vs ${rule}, won <b>${Math.round(bt.winRate * 100)}%</b>, ` +
         `said it'd fill <b>${Math.round(bt.predictedFill * 100)}%</b> → filled <b>${Math.round(bt.actualFill * 100)}%</b> · uses ${bt.k} similar charts`);
+      if (bt.contextGain != null) {
+        const g = bt.contextGain * 100;
+        facts.push(bt.usesContext
+          ? `Market & related-item signals: <b>in use</b> (${g >= 0 ? '+' : ''}${g.toFixed(2)}% better with them)`
+          : `Market & related-item signals: not used yet (didn't beat the chart alone, ${g.toFixed(2)}%); retested as history grows`);
+      }
     }
     if (j && j.graded) {
       const up = j.uplift * 100;
@@ -218,6 +227,37 @@ function sparkHtml(ai, breakEven) {
     <text class="s-ai-label" x="${W - m.r + 4}" y="${y(ai.price) + 3}">AI ${esc(gp(ai.price))}</text>
     <text x="${m.l}" y="${H - 2}">${hrs}h ago</text><text x="${W - m.r}" y="${H - 2}" text-anchor="end">now</text>
   </svg>`;
+}
+
+function renderSlots() {
+  const sp = data.slotPlan;
+  if (!sp) { els.slotsCard.hidden = true; return; }
+  els.slotsCard.hidden = false;
+  const cells = [];
+  for (const t of sp.usedByTrades.trades) {
+    for (let i = 0; i < t.slots; i++) cells.push(`<div class="slot trade" title="Your open trade"><b>${esc(t.name)}</b>${t.status}</div>`);
+  }
+  for (const p of sp.picks) {
+    for (let i = 0; i < p.slots; i++) cells.push(`<div class="slot plan" title="Suggested"><b>${esc(p.name)}</b>suggested</div>`);
+  }
+  while (cells.length < sp.slots) cells.push('<div class="slot">free</div>');
+  for (let i = sp.slots; i < 8; i++) cells.push('<div class="slot off">not used</div>');
+  els.slotBar.innerHTML = cells.slice(0, 8).join('');
+  els.slotBar.setAttribute('aria-label', `${sp.usedByTrades.slots} slots in use by your trades, ${sp.slotsPlanned} suggested, ${sp.freeSlots - sp.slotsPlanned} free`);
+  els.slotSummary.textContent = sp.picks.length
+    ? `Uses ${sp.slotsPlanned} of ${sp.freeSlots} free slots and ${gp(sp.cashPlanned)} of ${gp(sp.freeCash)} free cash · expected ${gpSigned(sp.profit)} (bad case ${gpSigned(sp.badProfit)})`
+    : sp.freeSlots === 0 ? 'All your slots are busy with open trades.'
+      : sp.freeCash <= 0 ? 'All your capital is tied up in open trades.'
+        : 'Nothing worth doing fits your free slots and cash right now.';
+  els.slotPicks.innerHTML = sp.picks.length ? `<div class="table-wrap"><table class="slot-list"><thead><tr>
+      <th>Craft</th><th class="num">Batch</th><th class="num">Slots</th><th class="num">Cash</th><th class="num">Profit</th>
+      <th class="num">Bad case</th><th class="num">Loss risk</th><th class="num">Takes</th><th></th></tr></thead><tbody>
+    ${sp.picks.map((p) => `<tr><td><span class="item">${icon(p.icon)}${esc(p.name)}</span>${p.scaled ? ' <span class="flag">batch cut to fit cash</span>' : ''}</td>
+      <td class="num">${p.batch}</td><td class="num">${p.slots}</td><td class="num">${gp(p.cost)}</td>
+      <td class="num ${cls(p.profit)}"><b>${gp(p.profit)}</b></td><td class="num ${cls(p.badProfit)}">${gp(p.badProfit)}</td>
+      <td class="num">${Math.round(p.pLoss * 100)}%</td><td class="num">${dur(p.hours * 3600)}</td>
+      <td class="num"><button class="btn small primary" data-start="${esc(p.id)}" data-batch="${p.batch}">Start</button></td></tr>`).join('')}
+    </tbody></table></div>` : '';
 }
 
 function renderPicks() {
@@ -516,7 +556,7 @@ function renderChart(series) {
 }
 
 // ---------- start / log dialog ----------
-function openStart(recipeId) {
+function openStart(recipeId, batch) {
   const ok = data.results.filter((r) => r.status === 'ok' && !tooMuchWork(r)).sort((a, b) => a.name.localeCompare(b.name));
   if (!ok.length) return;
   els.startRecipe.innerHTML = ok.map((r) => `<option value="${esc(r.id)}">${esc(r.name)}${r.outputQty > 1 ? ` ×${r.outputQty}` : ''} (${esc(r.category)})</option>`).join('');
@@ -525,6 +565,7 @@ function openStart(recipeId) {
   els.startBought.checked = false;
   els.startError.hidden = true;
   fillStart(true);
+  if (batch) { els.startBatch.value = batch; fillStart(false); }
   els.dialog.showModal();
 }
 
@@ -567,7 +608,7 @@ els.form.addEventListener('submit', async (ev) => {
 // ---------- events ----------
 document.addEventListener('click', async (ev) => {
   const start = ev.target.closest('[data-start]');
-  if (start) { ev.stopPropagation(); openStart(start.dataset.start); return; }
+  if (start) { ev.stopPropagation(); openStart(start.dataset.start, start.dataset.batch ? Number(start.dataset.batch) : undefined); return; }
   const act = ev.target.closest('[data-act]');
   if (act) {
     const { act: action, pos, index, from } = act.dataset;

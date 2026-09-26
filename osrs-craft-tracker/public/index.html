@@ -51,7 +51,10 @@
     <label title="Crafts needing more hands-on time than this per batch are hidden">Max hands-on time (min)
       <input id="maxActive" type="number" min="1" step="1" value="15">
     </label>
-    <label title="Capital you're willing to tie up per batch">Capital
+    <label title="How many of your 8 GE slots this app may plan with">GE slots
+      <input id="slots" type="number" min="1" max="8" step="1" value="8">
+    </label>
+    <label title="Total cash you're willing to tie up across all your crafts">Capital (total)
       <input id="capital" type="text" value="100m">
     </label>
     <label title="Share of matching market volume your offer captures. Lower = more conservative wait estimates.">Market share
@@ -68,6 +71,15 @@
     </section>
 
     <section id="aiBar" class="ai-bar" hidden></section>
+
+    <section class="card" id="slotsCard" hidden>
+      <div class="card-head">
+        <h2>Fill your GE slots</h2>
+        <span id="slotSummary" class="muted small"></span>
+      </div>
+      <div id="slotBar" class="slot-bar" role="img"></div>
+      <div id="slotPicks"></div>
+    </section>
 
     <div class="two-col">
       <section class="card">

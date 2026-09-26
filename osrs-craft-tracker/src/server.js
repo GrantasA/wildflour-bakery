@@ -11,6 +11,7 @@ const { PriceAI } = require('./ai');
 const { Journal } = require('./journal');
 const { RISK_LEVELS } = require('./risk');
 const { HistoryFiles } = require('./history');
+const { planSlots } = require('./portfolio');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -109,6 +110,7 @@ let backtesting = false;
 function runBacktests() {
   if (backtesting || !state.lastRefresh) return;
   backtesting = true;
+  priceAI.setRecipes(loadRecipes().recipes);
   const jobs = [];
   for (const side of ['sell', 'buy']) for (const w of aiWindowsInUse[side]) jobs.push([side, w]);
   const next = () => {
@@ -218,7 +220,7 @@ async function refresh() {
   }
   state.nextRefresh = Date.now() + REFRESH_MS;
   resultsCache.clear();
-  if (lastSettings) setImmediate(() => { try { computeResults(lastSettings); } catch (e) { logError('warm', e); } });
+  if (lastSettings) setImmediate(() => { try { computeResults(lastSettings); slotPlan(lastSettings); } catch (e) { logError('warm', e); } });
   backfillPending().then(() => {
     if (!backtests.sell.size) runBacktests();
   }).catch((e) => logError('backfill', e));
@@ -237,6 +239,7 @@ function parseSettings(q) {
     capital: num(q.get('capital'), DEFAULTS.capital, 1000, 1e11),
     objective: ['profit', 'activeProfit'].includes(q.get('objective')) ? q.get('objective') : 'profitPerHour',
     maxActive: num(q.get('maxActive'), 15, 0.5, 24 * 60),
+    slots: Math.round(num(q.get('slots'), 8, 1, 8)),
     sellWithinHours: num(q.get('sellWithin'), DEFAULTS.sellWithinHours, 0.05, 24 * 7),
     useAI: q.get('ai') !== '0',
     risk: RISK_LEVELS[q.get('risk')] != null ? q.get('risk') : 'balanced',
@@ -246,6 +249,7 @@ function parseSettings(q) {
 
 function computeResults(settings) {
   lastSettings = settings;
+  priceAI.setRecipes(loadRecipes().recipes);
   const key = JSON.stringify(settings) + ':' + store.version + ':' + recipesCache.mtime;
   if (resultsCache.has(key)) return resultsCache.get(key);
   const ai = { sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') };
@@ -276,6 +280,27 @@ function aiStatus(settings) {
     buy: { windowSec: buyBt ? buyBt.windowSec : null, backtest: buyBt, active: settings.useAI && (!buyBt || buyBt.uplift >= 0),
       journal: journal.stats('buy') },
   };
+}
+
+// GE slot plan: depends on your open trades too, so it's cached separately.
+let positionsRev = 0;
+const slotCache = new Map();
+function slotPlan(settings) {
+  const key = JSON.stringify(settings) + ':' + store.version + ':' + recipesCache.mtime + ':' + positionsRev;
+  if (slotCache.has(key)) return slotCache.get(key);
+  const { results } = computeResults(settings);
+  const opts = { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') };
+  const plan = planSlots({
+    results, positions: positions.list(), capital: settings.capital, slots: settings.slots,
+    maxActiveMinutes: settings.maxActive,
+    replan: (id, batch) => {
+      const recipe = recipeById(id);
+      return recipe ? evaluateRecipe({ ...recipe, batch }, (n) => store.getItem(n), opts) : null;
+    },
+  });
+  slotCache.clear();
+  slotCache.set(key, plan);
+  return plan;
 }
 
 function recipeById(id) {
@@ -327,8 +352,10 @@ async function handlePositions(req, res, url) {
       { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') });
     if (r.status !== 'ok') return sendJson(res, 400, { error: 'No price data for this craft yet' });
     const pos = positions.create({ recipe, batch: r.batch, plan: r.plan, prices: body.prices, bought: !!body.bought });
+    positionsRev++;
     return sendJson(res, 200, pos);
   }
+  positionsRev++;
   const pos = positions.act(m[1], body);
   return sendJson(res, 200, pos || { deleted: true });
 }
@@ -355,6 +382,7 @@ const server = http.createServer((req, res) => {
       errors: state.errors.slice(0, 5),
       settings,
       ...(state.lastRefresh ? computeResults(settings) : { results: [], best: [] }),
+      slotPlan: state.lastRefresh ? slotPlan(settings) : null,
       positions: positionsView(settings),
       ai: aiStatus(settings),
       stats: stats(positions.list()),

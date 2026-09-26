@@ -131,9 +131,28 @@ The app treats these as follows:
    This only covers trades from when the app is running, and a 10-second poll can miss a
    price that changed twice in between.
 
+   **Market and related-item signals.** Besides the item's own chart, the AI can compare:
+   - how the whole market has moved over the last 30 minutes and 2 hours
+   - how items in the same recipes have moved (ingredients and product)
+   - whether the craft margin (product vs ingredient cost) is unusually wide or narrow
+
+   The self-test runs the AI with and without these and only switches them on when they win
+   by a real margin (0.02% of price). The dashboard shows whether they're in use. With little
+   history they often aren't; they're retested as the saved history grows.
+
    The limit: the Wiki API has no live order book (the offers waiting on the GE), so the AI
    can't see those.
-5. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
+5. **Filling your GE slots.** The "Fill your GE slots" section plans the best mix of crafts
+   for your free slots (the **GE slots** setting, default 8) and your **Capital**. It
+   accounts for:
+   - the slots and cash your open trades already use
+   - one slot per ingredient while buying
+   - never two crafts that trade the same item (they'd compete for the same sellers and buy
+     limit)
+
+   Crafts are picked by risk-adjusted profit per slot-hour. A craft that doesn't fit the cash
+   left gets a smaller batch.
+6. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
    your **Capital** setting.
 
 Each row also shows the instant plan (buy at the current asking price, sell into the current

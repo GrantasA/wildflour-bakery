@@ -4,6 +4,11 @@ A live dashboard, similar in spirit to the Flipping Copilot RuneLite plugin, but
 instead of flips: oathplate armour, necklace of rupture, godswords, zenyte jewellery, spirit
 shields, enchanted bolts, potions and more.
 
+- **Unique crafts only.** Suggestions are always unique crafts: combining or upgrading a
+  few high-value items, one or two clicks each (oathplate, rupture, godswords, spirit
+  shields, zenyte jewellery, boots, Masori (f)…). Bulk processing (herbs, potions, bolts,
+  bars, battlestaves…) is marked `"type": "processing"` in `recipes.json`. It's never
+  suggested and is hidden in the table unless you tick "Show bulk processing".
 - **One goal: the best gp/h with the least work.** You choose only three things:
   - **Risk:** Low / Mid / High.
   - **Timeframe:** how long each buy or sell offer may take. 5m, 30m, 4h, 8h, or a custom

@@ -66,3 +66,10 @@ test('never suggests low earners: floor is 50K gp/h or 5% of the best', () => {
   const poor = planSlots({ results: [craft('e', ['E1'], 5000, 900_000, 1)], capital: 100, slots: 8 });
   assert.match(poor.note, /need more GP/);
 });
+
+test('an unaffordable craft does not raise the bar for the ones you can afford', () => {
+  const results = [craft('rich', ['R1'], 2e9, 25_000_000, 1), craft('a', ['A1'], 50e6, 800_000), craft('b', ['B1'], 40e6, 600_000)];
+  const p = planSlots({ results, capital: 100e6, slots: 8 });
+  assert.deepStrictEqual(p.picks.map((x) => x.id).sort(), ['a', 'b']);
+  assert.ok(p.minGph < 600_000, `floor ${p.minGph}`);
+});

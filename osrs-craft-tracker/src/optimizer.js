@@ -202,6 +202,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
 function evaluateAtBatch(recipe, getItem, opts) {
   const base = {
     id: recipe.id, category: recipe.category, skills: recipe.skills, notes: recipe.notes,
+    type: recipe.type === 'processing' ? 'processing' : 'unique',
     name: recipe.output.item, outputQty: recipe.output.qty,
     icon: getItem(recipe.output.item)?.icon || null,
     ingredients: recipe.inputs.map((i) => ({ item: i.item, qty: i.qty })), coins: recipe.coins || 0,

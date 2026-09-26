@@ -8,7 +8,7 @@ const els = {
   aiBar: $('aiBar'),
   slotsCard: $('slotsCard'), slotBar: $('slotBar'), slotPicks: $('slotPicks'), slotSummary: $('slotSummary'),
   capital: $('capital'),
-  search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
+  search: $('search'), category: $('category'), viableOnly: $('viableOnly'), showProcessing: $('showProcessing'),
   dialog: $('startDialog'), form: $('startForm'), startRecipe: $('startRecipe'), startBatch: $('startBatch'),
   startBought: $('startBought'), startInputs: $('startInputs'), startInfo: $('startInfo'), startError: $('startError'),
   startTitle: $('startTitle'), startSubmit: $('startSubmit'),
@@ -442,6 +442,7 @@ function renderTable() {
   const term = els.search.value.trim().toLowerCase();
   const rows = data.results.filter((r) => {
     if (r.status === 'missing' || tooMuchWork(r)) return false;
+    if (r.type === 'processing' && !els.showProcessing.checked) return false;
     if (els.category.value && r.category !== els.category.value) return false;
     if (els.viableOnly.checked && !r.viable) return false;
     if (term && !(r.name.toLowerCase().includes(term) || (r.ingredients || []).some((i) => i.item.toLowerCase().includes(term)))) return false;
@@ -464,7 +465,7 @@ function renderTable() {
 let topGph = 1;
 function rowHtml(r) {
   const open = expanded.has(r.id);
-  const title = `<span class="item">${icon(r.icon)}<span>${esc(r.name)}${r.outputQty > 1 ? ` ×${r.outputQty}` : ''}<br><span class="cat">${esc(r.category)}</span></span></span>`;
+  const title = `<span class="item">${icon(r.icon)}<span>${esc(r.name)}${r.outputQty > 1 ? ` ×${r.outputQty}` : ''}<br><span class="cat">${esc(r.category)}${r.type === 'processing' ? ' · bulk processing (never suggested)' : ''}</span></span></span>`;
   if (r.status !== 'ok') {
     return `<tr class="row dim"><td>${title}</td><td colspan="10" class="muted">${esc(r.status === 'nodata' ? 'Loading price history: ' : 'Error: ')}${esc((r.missing || []).join(', '))}</td></tr>`;
   }
@@ -709,7 +710,7 @@ els.tfSeg.addEventListener('click', (ev) => {
 });
 els.tfCustom.addEventListener('input', () => { settings.custom = els.tfCustom.value; if (parseDuration(settings.custom)) settingsChanged(); });
 els.capital.addEventListener('input', () => { settings.capital = els.capital.value; if (parseGp(settings.capital)) settingsChanged(); });
-for (const k of ['search', 'category', 'viableOnly']) els[k].addEventListener('input', () => data && renderTable());
+for (const k of ['search', 'category', 'viableOnly', 'showProcessing']) els[k].addEventListener('input', () => data && renderTable());
 window.addEventListener('resize', () => data && renderChart(data.stats.series));
 
 loadSettings();

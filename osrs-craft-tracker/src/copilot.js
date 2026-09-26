@@ -33,7 +33,7 @@ function worstP90(plan) {
 // explain *why* a craft ranks well (the chips in the UI).
 function rankCrafts(results, maxActiveMinutes, busyItems = new Set(), freeGp = Infinity, minGph = undefined) {
   // only what you can afford with the GP you have free
-  const floor = worthwhileFloor(results, minGph);
+  const floor = worthwhileFloor(results, minGph, freeGp);
   const pool = eligible(results, busyItems, maxActiveMinutes).filter((r) => r.plan.cost <= freeGp && gph(r) >= floor);
   if (!pool.length) return [];
   const pct = new Map(pool.map((r) => [r, {}]));

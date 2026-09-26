@@ -47,25 +47,35 @@ function inUse(positions) {
 }
 
 function eligible(results, busyItems, maxActiveMinutes) {
-  return results.filter((r) => r.status === 'ok' && r.viable && r.plan.riskAdjusted > 0 &&
+  // only unique crafts are suggested; bulk processing (herbs, bolts, bars...)
+  // means hours of clicking and isn't what this tool is for
+  return results.filter((r) => r.status === 'ok' && r.type !== 'processing' && r.viable && r.plan.riskAdjusted > 0 &&
     r.plan.activeSeconds <= maxActiveMinutes * 60 &&
     !(r.warnings || []).some((w) => w.kind === 'spike' || w.kind === 'crash') &&
     !itemsOf(r).some((n) => busyItems.has(n)));
 }
 
 // The gp/h a craft must reach to be worth suggesting, given the best available.
-function worthwhileFloor(results, minGph = MIN_GPH) {
-  const best = Math.max(0, ...results.filter((r) => r.status === 'ok' && r.viable).map(gph));
+// Only crafts you can afford count as "the best", otherwise an out-of-reach
+// 2B craft would push everything you *can* do under the bar.
+function worthwhileFloor(results, minGph = MIN_GPH, freeGp = Infinity) {
+  const best = Math.max(0, ...results.filter((r) => r.status === 'ok' && r.type !== 'processing' && r.viable &&
+    r.plan.cost / Math.max(1, r.batch) <= freeGp).map(gph));
   return Math.max(minGph, MIN_SHARE_OF_BEST * best);
 }
 
 // Why nothing (more) is suggested, in plain words.
 function explainEmpty({ results, busyItems, maxActiveMinutes, freeCash, freeSlots, floor }) {
   if (freeSlots <= 0) return 'All your GE slots are busy with open trades.';
-  const ok = results.filter((r) => r.status === 'ok');
+  const ok = results.filter((r) => r.status === 'ok' && r.type !== 'processing');
   if (!ok.length) return 'Still loading prices.';
   const profitable = ok.filter((r) => r.viable && r.plan.riskAdjusted > 0);
-  if (!profitable.length) return 'No craft is profitable within your timeframe and risk right now. Try a longer timeframe or higher risk.';
+  if (!profitable.length) {
+    const thin = ok.filter((r) => r.plan.profit > 0 && r.flags.some((f) => /only trades/.test(f))).length;
+    return thin
+      ? `No unique craft fits your timeframe right now: ${thin} profitable one(s) trade too slowly to fill in time. Try a longer timeframe (8h or custom, e.g. 1d).`
+      : 'No unique craft is profitable within your timeframe and risk right now. Try a longer timeframe or higher risk.';
+  }
   const cand = eligible(results, busyItems, maxActiveMinutes);
   if (!cand.length) return 'The profitable crafts clash with your open trades, look like price spikes, or need too much clicking.';
   const worthy = cand.filter((r) => gph(r) >= floor);
@@ -89,7 +99,7 @@ function planSlots({ results, positions = [], capital, slots = 8, maxActiveMinut
   const used = inUse(positions);
   const freeCash = Math.max(0, capital - used.cash);
   const freeSlots = Math.max(0, slots - used.slots);
-  const floor = worthwhileFloor(results, minGph);
+  const floor = worthwhileFloor(results, minGph, freeCash);
   const pool = eligible(results, used.items, maxActiveMinutes)
     .filter((r) => gph(r) >= floor)
     .sort((a, b) => gph(b) - gph(a)).slice(0, TOP_CANDIDATES);

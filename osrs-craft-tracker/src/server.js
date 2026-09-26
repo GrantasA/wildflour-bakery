@@ -301,7 +301,7 @@ function slotPlan(settings) {
   const freeGp = Math.max(0, settings.capital - used.cash);
   const best = rankCrafts(results, settings.maxActive, used.items, freeGp).slice(0, 5).map((r) => r.id);
   const bestNote = best.length ? null : explainEmpty({ results, busyItems: used.items, maxActiveMinutes: settings.maxActive,
-    freeCash: freeGp, freeSlots: Infinity, floor: worthwhileFloor(results) });
+    freeCash: freeGp, freeSlots: Infinity, floor: worthwhileFloor(results, undefined, freeGp) });
   const opts = { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') };
   const plan = planSlots({
     results, positions: positions.list(), capital: settings.capital, slots: settings.slots,

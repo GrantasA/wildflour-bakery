@@ -109,6 +109,7 @@ class PriceStore {
       id: m.id,
       name: m.name,
       limit: m.limit || null,
+      icon: m.icon ? 'https://oldschool.runescape.wiki/images/' + encodeURIComponent(m.icon.replace(/ /g, '_')) : null,
       latest: this.latest.get(m.id) || {},
       series5m: this.series(m.id, '5m'),
       series1h: this.series(m.id, '1h'),

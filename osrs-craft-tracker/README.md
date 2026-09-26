@@ -1,15 +1,26 @@
-# OSRS Craft Profit Tracker
+# Craft Copilot: OSRS craft profit tracker
 
-A live dashboard that ranks Old School RuneScape crafts (oathplate armour, necklace of rupture,
-godswords, zenyte jewellery, spirit shields, enchanted bolts, potions and more) by profit.
-For each craft it works out which buy and sell offer prices to use so that you earn the most
-profit for the time spent waiting on the Grand Exchange.
+A live dashboard, similar in spirit to the Flipping Copilot RuneLite plugin, but for crafts
+instead of flips: oathplate armour, necklace of rupture, godswords, zenyte jewellery, spirit
+shields, enchanted bolts, potions and more.
 
-- Uses live prices from the [OSRS Wiki real-time prices API](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices).
-- **Refreshes prices and viability every minute.** The browser updates itself.
-- Includes the **GE tax**: 2% per item sold, rounded down, capped at 5M. Bonds and a few tools are exempt.
-- Includes **GE buy limits**. When a batch needs more than one 4-hour limit window, the extra windows are added to the wait.
-- No dependencies. Needs Node.js 18 or newer.
+- **Copilot picks.** The best all-round craft right now, with the exact buy and sell prices to
+  offer. The score blends profit, profit for your time, return, speed, how reliably offers fill,
+  and market liquidity.
+- **Your trades.** Start a craft and the app tells you, every minute:
+  - when to **raise** or **lower** a buy offer, or **cancel** it if the craft stops being
+    profitable
+  - what to list at once you've bought everything, with your break-even price
+  - when to relist a slow sale
+- **Log a trade you've already made.** Tick "I've already bought the ingredients", enter what
+  you paid, and you get a sell price suggestion straight away.
+- **Profit tracking.** Every completed trade goes into your history, with total profit, GE tax
+  paid and a cumulative profit chart. Trades are saved in `data/positions.json`.
+- **No crafts that eat your time.** Anything needing more hands-on time than your limit
+  (15 minutes per batch by default) is hidden, as are crafts involving untradeable items.
+- Includes the **GE tax** (2% per item, rounded down, capped at 5M) and **GE buy limits**.
+- Live prices from the [OSRS Wiki real-time prices API](https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices),
+  **refreshed every minute**. No dependencies; needs Node.js 18 or newer.
 
 ## Run it
 
@@ -93,6 +104,8 @@ Edit `src/recipes.json`. The server picks up changes on the next refresh.
 | `PORT` | `3000` | HTTP port |
 | `OSRS_USER_AGENT` | generic | User-Agent sent to the Wiki API |
 | `RECIPES_FILE` | `src/recipes.json` | Alternative recipe file |
+| `POSITIONS_FILE` | `data/positions.json` | Where your trades are saved |
+| `HOST` | `127.0.0.1` | Interface to listen on. Only this PC by default, since the page can edit your trades. |
 
 ## Limits of the model
 

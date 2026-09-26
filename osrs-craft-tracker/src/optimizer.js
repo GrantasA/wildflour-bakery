@@ -43,11 +43,11 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell) {
   const activeSeconds = craftSeconds + OFFER_SECONDS * (inputs.length + 1);
   return {
     inputs: inputs.map((inp, i) => ({
-      name: inp.item.name, id: inp.item.id, qty: inp.qty * n, price: buys[i].price,
+      name: inp.item.name, id: inp.item.id, icon: inp.item.icon, qty: inp.qty * n, price: buys[i].price,
       median: buys[i].median, p90: buys[i].p90,
       instaBuy: inp.item.latest.high, instaSell: inp.item.latest.low,
     })),
-    sell: { name: output.name, id: output.id, qty: outQty, price: sell.price, tax: taxEach,
+    sell: { name: output.name, id: output.id, icon: output.icon, qty: outQty, price: sell.price, tax: taxEach,
       median: sell.median, p90: sell.p90, instaBuy: output.latest.high, instaSell: output.latest.low },
     cost, revenue, taxTotal, profit,
     profitPerCraft: profit / n,
@@ -71,6 +71,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const base = {
     id: recipe.id, category: recipe.category, skills: recipe.skills, notes: recipe.notes,
     name: recipe.output.item, outputQty: recipe.output.qty,
+    icon: getItem(recipe.output.item)?.icon || null,
     ingredients: recipe.inputs.map((i) => ({ item: i.item, qty: i.qty })), coins: recipe.coins || 0,
   };
 
@@ -152,4 +153,4 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   };
 }
 
-module.exports = { evaluateRecipe, batchSize, DEFAULTS };
+module.exports = { evaluateRecipe, batchSize, DEFAULTS, OFFER_SECONDS };

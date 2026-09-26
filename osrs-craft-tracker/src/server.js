@@ -5,8 +5,14 @@ const fs = require('fs');
 const path = require('path');
 const { PriceStore } = require('./prices');
 const { evaluateRecipe, DEFAULTS } = require('./optimizer');
+const { PositionStore, stats } = require('./positions');
+const { rankCrafts, advise } = require('./copilot');
 
 const PORT = Number(process.env.PORT) || 3000;
+// The page can create and edit your trades, so only listen on this machine.
+const HOST = process.env.HOST || '127.0.0.1';
+const POSITIONS_FILE = process.env.POSITIONS_FILE ||
+  path.join(__dirname, '..', 'data', process.argv.includes('--mock') ? 'positions-mock.json' : 'positions.json');
 const REFRESH_MS = 60_000;                // prices + viability every minute
 const HOURLY_BUCKET_MS = 10 * 60_000;
 const BACKFILL_MAX_AGE_MS = 6 * 3600_000; // re-pull full history every 6h
@@ -19,6 +25,7 @@ const USER_AGENT = process.env.OSRS_USER_AGENT ||
 
 const fetchImpl = MOCK ? require('./mock').createMockFetch(() => loadRecipes().recipes) : globalThis.fetch;
 const store = new PriceStore({ userAgent: USER_AGENT, fetchImpl });
+const positions = new PositionStore(POSITIONS_FILE);
 
 const state = {
   startedAt: Date.now(),
@@ -123,6 +130,7 @@ function parseSettings(q) {
     maxWaitHours: num(q.get('maxWait'), DEFAULTS.maxWaitHours, 0.05, 24 * 14),
     capital: num(q.get('capital'), DEFAULTS.capital, 1000, 1e11),
     objective: ['profit', 'activeProfit'].includes(q.get('objective')) ? q.get('objective') : 'profitPerHour',
+    maxActive: num(q.get('maxActive'), 15, 0.5, 24 * 60),
   };
 }
 
@@ -137,14 +145,76 @@ function computeResults(settings) {
       return { id: r.id, name: r.output.item, category: r.category, status: 'error', missing: [e.message] };
     }
   });
-  resultsCache.set(key, results);
-  return results;
+  const ranked = rankCrafts(results, settings.maxActive);
+  const out = { results, best: ranked.slice(0, 5).map((r) => r.id) };
+  resultsCache.set(key, out);
+  return out;
+}
+
+function recipeById(id) {
+  return loadRecipes().recipes.find((r) => r.id === id) || null;
+}
+
+function positionsView(settings) {
+  const getItem = (n) => store.getItem(n);
+  return positions.list().map((p) => {
+    if (!['buying', 'ready', 'selling'].includes(p.status) || !state.lastRefresh) return p;
+    try {
+      return { ...p, advice: advise(p, recipeById(p.recipeId), getItem, settings) };
+    } catch (e) {
+      logError(`advice ${p.id}`, e);
+      return { ...p, advice: { kind: 'info', text: 'Could not compute advice: ' + e.message } };
+    }
+  });
+}
+
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', (c) => {
+      body += c;
+      if (body.length > 100_000) { reject(Object.assign(new Error('Body too large'), { status: 413 })); req.destroy(); }
+    });
+    req.on('end', () => {
+      try { resolve(body ? JSON.parse(body) : {}); } catch (e) { reject(Object.assign(new Error('Bad JSON'), { status: 400 })); }
+    });
+  });
+}
+
+function sendJson(res, status, body) {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(body));
+}
+
+async function handlePositions(req, res, url) {
+  const settings = parseSettings(url.searchParams);
+  const m = url.pathname.match(/^\/api\/positions(?:\/([\w-]+))?$/);
+  if (!m || req.method !== 'POST') return sendJson(res, 404, { error: 'Not found' });
+  const body = await readJson(req);
+  if (!m[1]) {
+    const recipe = recipeById(body.recipeId);
+    if (!recipe) return sendJson(res, 400, { error: 'Unknown craft' });
+    const batch = Math.max(1, Math.min(1_000_000, Math.round(Number(body.batch)) || 0)) || undefined;
+    const r = evaluateRecipe(batch ? { ...recipe, batch } : recipe, (n) => store.getItem(n), settings);
+    if (r.status !== 'ok') return sendJson(res, 400, { error: 'No price data for this craft yet' });
+    const pos = positions.create({ recipe, batch: r.batch, plan: r.plan, prices: body.prices, bought: !!body.bought });
+    return sendJson(res, 200, pos);
+  }
+  const pos = positions.act(m[1], body);
+  return sendJson(res, 200, pos || { deleted: true });
 }
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
+  if (url.pathname.startsWith('/api/positions')) {
+    handlePositions(req, res, url).catch((e) => {
+      if (!e.status) logError('positions', e);
+      sendJson(res, e.status || 500, { error: e.message });
+    });
+    return;
+  }
   if (url.pathname === '/api/state') {
     const settings = parseSettings(url.searchParams);
     const body = {
@@ -155,7 +225,9 @@ const server = http.createServer((req, res) => {
       backfill: state.backfill,
       errors: state.errors.slice(0, 5),
       settings,
-      results: state.lastRefresh ? computeResults(settings) : [],
+      ...(state.lastRefresh ? computeResults(settings) : { results: [], best: [] }),
+      positions: positionsView(settings),
+      stats: stats(positions.list()),
     };
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
@@ -172,7 +244,7 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(full).pipe(res);
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, HOST, () => {
   console.log(`OSRS craft tracker on http://localhost:${PORT}${MOCK ? ' (MOCK DATA)' : ''}`);
   refresh();
   setInterval(refresh, REFRESH_MS);

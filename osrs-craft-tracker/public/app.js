@@ -41,6 +41,7 @@ function dur(sec) {
   if (h < 24) return `${h}h ${m % 60}m`;
   return `${Math.floor(h / 24)}d ${h % 24}h`;
 }
+const perDayTxt = (n) => (n == null ? '' : ` <span class="muted small">· ~${n >= 1e4 ? gp(n) : Math.round(n).toLocaleString()}/day</span>`);
 const pct = (x) => (Number.isFinite(x) ? (x * 100).toFixed(1) + '%' : '–');
 const cls = (n) => (n > 0 ? 'pos' : n < 0 ? 'neg' : '');
 const icon = (url, big) => (url ? `<img class="icon${big ? ' lg' : ''}" src="${esc(url)}" alt="" loading="lazy" onerror="this.remove()">` : '');
@@ -311,9 +312,9 @@ function renderPicks() {
         <div class="stat"><b>${Math.round(p.pLoss * 100)}%</b><span>chance of a loss</span></div>
       </div>
       <table class="orders"><tbody>
-        ${p.inputs.map((i) => `<tr><td>BUY</td><td><span class="item">${icon(i.icon)}${esc(i.name)} ×${i.qty.toLocaleString()}</span></td>
+        ${p.inputs.map((i) => `<tr><td>BUY</td><td><span class="item">${icon(i.icon)}${esc(i.name)} ×${i.qty.toLocaleString()}${perDayTxt(i.perDay)}</span></td>
           <td class="num"><b>${gpExact(i.price)}</b> ea${i.ai ? `<span class="tag-ai" title="${Math.round(i.pFill * 100)}% chance it fills in time">AI</span>` : ''}</td><td class="num muted">~${dur(i.median)}</td></tr>`).join('')}
-        <tr><td>SELL</td><td><span class="item">${icon(p.sell.icon)}${esc(p.sell.name)} ×${p.sell.qty.toLocaleString()}</span></td>
+        <tr><td>SELL</td><td><span class="item">${icon(p.sell.icon)}${esc(p.sell.name)} ×${p.sell.qty.toLocaleString()}${perDayTxt(p.sell.perDay)}</span></td>
           <td class="num"><b>${gpExact(p.sell.price)}</b> ea${top.ai ? `<span class="tag-ai" title="${Math.round(top.ai.pFill * 100)}% chance to sell in time, from ${top.ai.neighbours} similar charts">AI</span>` : ''}</td><td class="num muted">~${dur(p.sell.median)}</td></tr>
       </tbody></table>
       <div class="pick-actions"><button class="btn primary" data-start="${esc(top.id)}">Start this craft</button></div>
@@ -507,6 +508,8 @@ function detailHtml(r) {
     <p class="muted">${esc(r.skills || '')}${r.notes ? ' · ' + esc(r.notes) : ''}${r.coins ? ` · ${gpExact(r.coins)} gp fee per craft` : ''}</p>
     ${r.batchOptions && r.batchOptions.length > 1 ? `<p class="muted">Batch chosen for the best gp/h (max possible ${r.maxBatch}): ${r.batchOptions.map((o) =>
       `${o.batch === r.batch ? '<b>' : ''}${o.batch} → ${gp(o.gph)}/h${o.batch === r.batch ? '</b>' : ''}`).join(' · ')}</p>` : ''}
+    ${r.volume && r.volume.length ? `<p class="muted">Market check (how much trades vs what this batch needs in your timeframe): ${r.volume.map((l) =>
+      `${esc(l.name)} ~${Math.round(l.perDay).toLocaleString()}/day → you can expect ~${l.canGet >= 10 ? Math.round(l.canGet).toLocaleString() : l.canGet.toFixed(1)} in time`).join(' · ')}</p>` : ''}
     <p>Batch of ${r.batch}: cost ${gpExact(p.cost)} · revenue ${gpExact(p.revenue)} · tax ${gpExact(p.taxTotal)} ·
       <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> · buy ~${dur(p.buySeconds)}, craft ${dur(p.craftSeconds)}, sell ~${dur(s.median)}</p>
     <p class="muted">At the last traded prices (buy at the last price buyers paid, sell at the last price sellers took; these are recent trades, not guaranteed instant fills): ${gpSigned(i.profit)}, likely ~${dur(i.seconds)}</p>
@@ -611,7 +614,7 @@ async function fillStart(resetBatch) {
   const bought = els.startBought.checked;
   const typed = new Map([...els.startInputs.querySelectorAll('input[data-edited]')].map((i) => [i.dataset.name, i.value]));
   const render = (plan, note) => {
-    els.startInputs.innerHTML = plan.inputs.map((i, k) => `<label>${icon(i.icon)}<span style="flex:1">${esc(i.name)} ×${i.qty.toLocaleString()}</span>
+    els.startInputs.innerHTML = plan.inputs.map((i, k) => `<label>${icon(i.icon)}<span style="flex:1">${esc(i.name)} ×${i.qty.toLocaleString()}${perDayTxt(i.perDay)}</span>
       <input data-k="${k}" data-name="${esc(i.name)}" inputmode="numeric" value="${esc(typed.get(i.name) ?? i.price)}"${typed.has(i.name) ? ' data-edited="1"' : ''}
         aria-label="${bought ? 'Price paid' : 'Offer price'} for ${esc(i.name)}"></label>`).join('');
     els.startInfo.textContent = bought

@@ -117,14 +117,43 @@ test('batch size is chosen for gp/h, within buy limits and the clicking limit', 
   const opts = { share: 0.5, maxWaitHours: 1e6, capital: 1e12, objective: 'profitPerHour' };
   const r = evaluateRecipe(recipe, (n) => items[n], opts);
   assert.strictEqual(r.status, 'ok');
-  assert.strictEqual(r.maxBatch, 1000); // the buy limit
+  // ~1,728 trade per day; with a 2h sell window and a 50% share the market can take ~72
+  assert.strictEqual(r.maxBatch, 72);
   const g = (x) => x.gph;
-  const atMax = r.batchOptions.find((o) => o.batch === 1000);
+  const atMax = r.batchOptions.find((o) => o.batch === 72);
   const chosen = r.batchOptions.find((o) => o.batch === r.batch);
-  assert.ok(r.batch < 1000, `chose ${r.batch}`);
+  assert.ok(r.batch <= 72, `chose ${r.batch}`);
   assert.ok(g(chosen) >= g(atMax));
   assert.ok(r.batchOptions.every((o) => g(o) <= g(chosen) + 1e-9));
   // clicking limit: 1 minute of work, 15s per offer x2 offers, 10s per craft -> at most 3 crafts
   const r2 = evaluateRecipe({ ...recipe, craftSeconds: 10 }, (n) => items[n], { ...opts, maxActive: 1 });
   assert.ok(r2.batch <= 3 && r2.maxBatch <= 3, `batch ${r2.batch} max ${r2.maxBatch}`);
+});
+
+test('never plans more than the market trades: 280 of a 32/day item in 30 minutes is refused', () => {
+  // ~32 trades per day (16 each side), spread thinly across the day
+  const thin = (name, mid) => {
+    const raw = [];
+    for (let k = 0; k < 288; k++) {
+      const trade = k % 18 === 0;
+      raw.push({ timestamp: k * 300, avgHighPrice: trade ? mid + 5 : null, highPriceVolume: trade ? 1 : 0,
+        avgLowPrice: trade ? mid - 5 : null, lowPriceVolume: trade ? 1 : 0 });
+    }
+    return { id: 1, name, limit: 10_000, latest: { high: mid + 5, low: mid - 5, highTime: Date.now() / 1000, lowTime: Date.now() / 1000 },
+      series5m: normalizeSeries(raw, 300), series1h: [] };
+  };
+  const items = { Rare: thin('Rare', 50_000), Out: mkItem('Out', 80_000, 30) };
+  const recipe = { id: 'rare', category: 'T', inputs: [{ item: 'Rare', qty: 1 }], output: { item: 'Out', qty: 1 }, craftSeconds: 1 };
+  const opts = { share: 0.33, capital: 1e12, objective: 'profitPerHour', buyWithinHours: 0.5, sellWithinHours: 0.5, maxWaitHours: 1.25 };
+  const r = evaluateRecipe(recipe, (n) => items[n], opts);
+  assert.strictEqual(r.status, 'ok');
+  assert.ok(r.batch <= 1, `batch ${r.batch}`);
+  assert.strictEqual(r.viable, false);
+  assert.ok(r.flags.some((f) => /Rare only trades ~32\/day/.test(f)), r.flags.join(' | '));
+  // a user-forced batch of 280 is flagged too
+  const forced = evaluateRecipe({ ...recipe, batch: 280 }, (n) => items[n], { ...opts, buyWithinHours: 24 * 30 });
+  assert.strictEqual(forced.viable, false);
+  assert.ok(forced.flags.some((f) => /more than the market trades/.test(f)), forced.flags.join(' | '));
+  // and the plan shows the daily volume next to the ingredient
+  assert.ok(Math.abs(r.plan.inputs[0].perDay - 32) < 1);
 });

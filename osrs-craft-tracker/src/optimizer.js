@@ -1,6 +1,6 @@
 'use strict';
 
-const { priceCurve, fillAt, sellOptions, buyLimitSeconds } = require('./market');
+const { priceCurve, fillAt, sellOptions, buyLimitSeconds, dailyVolume } = require('./market');
 const { priceMoveRisk, warnings } = require('./risk');
 const { taxPerItem } = require('./tax');
 
@@ -44,6 +44,26 @@ function batchSize(recipe, inputs, capital, maxActiveMinutes = Infinity) {
   return Math.max(1, n);
 }
 
+// Hard reality check, independent of any model: how many crafts can the market
+// actually supply in your timeframe? For each ingredient (and the product) take
+// the units it trades per day, the share of them you can expect to get, and how
+// much of a day your timeframe is. No plan may need more than that.
+function volumeCheck(recipe, inputs, output, share, buyWindowSec, sellWindowSec) {
+  const lines = [];
+  let maxBatch = Infinity;
+  const add = (item, perCraft, windowSec, side) => {
+    const perDay = dailyVolume(item);
+    if (perDay == null) return;
+    const canGet = (share * perDay * windowSec) / 86400; // units you can expect in the window
+    const crafts = Math.floor(canGet / perCraft);
+    lines.push({ name: item.name, side, perDay, canGet, crafts });
+    maxBatch = Math.min(maxBatch, crafts);
+  };
+  inputs.forEach((inp) => add(inp.item, inp.qty, buyWindowSec, 'buy'));
+  add(output, recipe.output.qty, sellWindowSec, 'sell');
+  return { maxBatch, lines };
+}
+
 // buys[i] / sell: offer options. Optional fields from the price AI:
 //   buy.cost  expected cost per unit (includes buying at market if the offer doesn't fill)
 //   sell.net  expected net per unit after tax (includes dumping if it doesn't sell)
@@ -81,10 +101,11 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
       name: inp.item.name, id: inp.item.id, icon: inp.item.icon, qty: inp.qty * n, price: buys[i].price,
       expectedCost: buys[i].cost ?? null, ai: !!buys[i].ai, pFill: buys[i].pFill ?? null,
       windowSec: buys[i].windowSec ?? null,
+      perDay: dailyVolume(inp.item),
       median: buys[i].median * tf, p90: buys[i].p90 * tf,
       instaBuy: inp.item.latest.high, instaSell: inp.item.latest.low,
     })),
-    sell: { name: output.name, id: output.id, icon: output.icon, qty: outQty, price: sell.price, tax: taxEach,
+    sell: { name: output.name, id: output.id, icon: output.icon, qty: outQty, perDay: dailyVolume(output), price: sell.price, tax: taxEach,
       expectedNet: sell.net ?? null, ai: !!sell.ai, pFill: sell.pFill ?? null,
       median: sellSeconds, p90: sell.p90 * tf, instaBuy: output.latest.high, instaSell: output.latest.low },
     cost, revenue, taxTotal, profit,
@@ -199,7 +220,11 @@ function evaluateAtBatch(recipe, getItem, opts) {
   const noPrice = [...inputs.map((i) => i.item), output].filter((it) => !it.latest || (!it.latest.high && !it.latest.low));
   if (noPrice.length) return { ...base, status: 'nodata', missing: noPrice.map((i) => i.name) };
 
-  const n = batchSize(recipe, inputs, opts.capital, opts.maxActive);
+  const vol = volumeCheck(recipe, inputs, output, opts.share,
+    (opts.buyWithinHours ?? opts.maxWaitHours) * 3600, (opts.sellWithinHours ?? opts.maxWaitHours) * 3600);
+  let n = batchSize(recipe, inputs, opts.capital, opts.maxActive);
+  // never plan more than the market can supply in your timeframe
+  if (!recipe.batch && Number.isFinite(vol.maxBatch)) n = Math.max(1, Math.min(n, vol.maxBatch));
   // Let the price AI pick buy prices where it can; otherwise use the fill-time model.
   const buyCurves = inputs.map((inp) => (opts.buyAdvisor
     ? aiBuyCurve(opts.buyAdvisor, inp.item, inp.qty * n, (opts.buyWithinHours ?? opts.maxWaitHours) * 3600, opts) : null)
@@ -259,6 +284,13 @@ function evaluateAtBatch(recipe, getItem, opts) {
   if (!withinWait) flags.push(`slower than ${opts.maxWaitHours}h max wait`);
   const series = [...buyCurves.map((c) => c.series), sellCurve.series];
   if (series.includes('1h')) flags.push('thin market (hourly data)');
+  const tooThin = vol.lines.filter((l) => l.crafts < 1);
+  for (const l of tooThin) {
+    flags.push(`${l.name} only trades ~${Math.round(l.perDay).toLocaleString()}/day: not enough to ${l.side} even one craft's worth in your timeframe`);
+  }
+  if (!tooThin.length && Number.isFinite(vol.maxBatch) && n > vol.maxBatch) {
+    flags.push(`batch of ${n} is more than the market trades in your timeframe (about ${vol.maxBatch})`);
+  }
   const warn = [output, ...inputs.map((i) => i.item)].flatMap((it) =>
     warnings(it).map((w) => ({ ...w, item: it.name })));
   for (const w of warn) flags.push(`${w.item}: ${w.text}`);
@@ -271,7 +303,8 @@ function evaluateAtBatch(recipe, getItem, opts) {
     ...base,
     status: 'ok',
     batch: n,
-    viable: withinWait && best.profit > 0 && best.riskAdjusted > 0,
+    viable: withinWait && best.profit > 0 && best.riskAdjusted > 0 && !tooThin.length && !(n > vol.maxBatch),
+    volume: vol.lines,
     warnings: warn,
     ai: ai ? { price: ai.price, pFill: ai.pFill, rule: ai.rule, neighbours: ai.neighbours } : null,
     aiBuys: buyCurves.some((c) => c.series === 'ai'),

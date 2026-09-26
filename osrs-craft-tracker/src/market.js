@@ -263,7 +263,25 @@ function sellOptions(item, qty, opts, windowSec = (opts.sellWithinHours ?? 2) * 
   return { points: frontier, all, series: curve.series, cap };
 }
 
+// Units traded per day (both sides), from the last day of 5-minute data, or
+// hourly data for items without much recent history. null if unknown.
+function dailyVolume(item) {
+  const sum = (arr) => arr.reduce((a, b) => a + b.highVol + b.lowVol, 0);
+  const s5 = item.series5m || [];
+  if (s5.length >= 12) {
+    const day = s5.slice(-288);
+    return (sum(day) * 288) / day.length;
+  }
+  const s1 = item.series1h || [];
+  if (s1.length) {
+    const day = s1.slice(-24);
+    return (sum(day) * 24) / day.length;
+  }
+  return null;
+}
+
 module.exports = {
+  dailyVolume,
   sellOptions, tickUnits,
   normalizeSeries, matchableVolumes, fillTimeStats, buyLimitSeconds,
   pickSeries, detrend, candidatePrices, priceCurve, fillAt, FOUR_HOURS, MIN_FILL_SECONDS,

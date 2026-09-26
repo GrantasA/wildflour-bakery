@@ -122,6 +122,13 @@ The app treats these as follows:
    and that takes time too, about as long as the market needs to move your quantity. That
    is included, so an estimate can be longer than your timeframe when that's the truth.
 
+   **Hard volume check.** Whatever the models say, no plan may need more than the market
+   actually trades in your timeframe. For each ingredient and the product, the app takes the
+   units traded per day and your expected share (a third), scaled to your timeframe. That
+   caps the batch size. If even one craft's worth can't be bought or sold in time, the craft
+   is flagged (for example "only trades ~32/day") and never suggested. Daily volume is shown
+   next to every ingredient.
+
    **Learns your real fill times.** Each offer placed at a suggested price is recorded with its
    predicted time. When you click **Bought** or **Sold**, the real time is compared with the
    prediction. The typical ratio becomes a correction applied to every time estimate and to

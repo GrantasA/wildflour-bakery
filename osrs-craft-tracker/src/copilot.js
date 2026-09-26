@@ -1,7 +1,7 @@
 'use strict';
 
 const { priceCurve, fillAt, sellOptions } = require('./market');
-const { DEFAULTS, evaluateRecipe } = require('./optimizer');
+const { DEFAULTS, evaluateRecipe, sellWindowsFor } = require('./optimizer');
 const { craftTime } = require('./effort');
 const { taxPerItem } = require('./tax');
 const { costOf, breakEvenPrice } = require('./positions');
@@ -79,13 +79,14 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
   if (pos.status === 'buying') {
     const deadline = pos.createdAt + pos.plannedBuySeconds * 1000;
     const remaining = Math.max(MIN_BUDGET, (deadline - now) / 1000);
-    let checkIn = 1800;
+    // you said how often you check; offers are priced to be right until then
+    let checkIn = opts.checkInHours != null ? opts.checkInHours * 3600 : 1800;
     const inputs = pos.inputs.map((inp) => {
       if (inp.bought) return { kind: 'done', text: `Bought at ${fmt(inp.boughtPrice)}` };
       const item = getItem(inp.name);
       if (!item) return { kind: 'info', text: 'No price data' };
       const cur = fillAtS(item, 'buy', inp.qty, inp.offerPrice, opts);
-      checkIn = Math.min(checkIn, Math.max(120, cur.median / 4));
+      if (opts.checkInHours == null) checkIn = Math.min(checkIn, Math.max(120, cur.median / 4));
       // time left for this offer: its own planned window since it was (re)placed
       const left = inp.windowSec
         ? Math.max(MIN_BUDGET, (inp.placedAt + inp.windowSec * 1000 - now) / 1000) : remaining;
@@ -152,7 +153,17 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
       ? opt.points.reduce((b, p) => (profitAt(p.price) / (p.median + craftSec) > profitAt(b.price) / (b.median + craftSec) ? p : b))
       : opt.points[opt.points.length - 1]; // highest price that still sells within the window
     const quick = pts.length ? pts[0] : best;
-    const ai = opts.sellAdvisor ? opts.sellAdvisor(output, pos.sell.qty, opts.sellWithinHours * 3600) : null;
+    // one AI price per window (sell by your next check, or leave it up longer);
+    // take the one that earns the most per hour from here
+    let ai = null;
+    if (opts.sellAdvisor) {
+      for (const w of sellWindowsFor(opts)) {
+        const a = opts.sellAdvisor(output, pos.sell.qty, w);
+        if (!a) continue;
+        const rate = (pos.sell.qty * a.expected - cost) / Math.max(60, a.median + craftSec);
+        if (!ai || rate > ai.rate) ai = { ...a, rate, windowSec: w };
+      }
+    }
     if (ai) {
       const p = pos.sell.qty * ai.expected - cost;
       const badP = pos.sell.qty * ai.bad - cost;
@@ -186,9 +197,10 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
   if (pos.status === 'selling') {
     const offer = pos.sell.offerPrice;
     const cur = fillAtS(output, 'sell', pos.sell.qty, offer, opts);
-    const remaining = Math.max(MIN_BUDGET, (pos.sell.placedAt + opts.sellWithinHours * 3600 * 1000 - now) / 1000);
+    const listWindow = pos.sell.windowSec || (opts.checkInHours ?? opts.sellWithinHours) * 3600;
+    const remaining = Math.max(MIN_BUDGET, (pos.sell.placedAt + listWindow * 1000 - now) / 1000);
     const base = { breakEven, median: cur.median, projectedProfit: profitAt(offer),
-      checkInSeconds: Math.round(Math.max(120, Math.min(1800, cur.median / 4))) };
+      checkInSeconds: Math.round(opts.checkInHours != null ? opts.checkInHours * 3600 : Math.max(120, Math.min(1800, cur.median / 4))) };
     const ai = opts.sellAdvisor ? opts.sellAdvisor(output, pos.sell.qty, remaining) : null;
     if (ai) {
       base.ai = ai;

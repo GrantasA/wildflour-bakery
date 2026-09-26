@@ -17,6 +17,34 @@ const DEFAULTS = {
 // Buy windows the price AI is asked about when building an input's options.
 const AI_BUY_WINDOWS = [5 / 60, 0.5, 1, 4, 8, 12, 24, 48].map((h) => Math.round(h * 3600));
 
+// Offer windows when you check your offers every `checkIn` seconds: an offer
+// can't be changed before your next check, so a window shorter than that makes
+// no sense; longer ones (you leave a cheap offer up across several checks) can.
+// A few well-spaced longer windows are enough (each one costs an AI query).
+const LONGER_BUY_WINDOWS = [0.5, 4, 24].map((h) => h * 3600);
+const SELL_WINDOWS = [1, 12].map((h) => h * 3600);
+function buyWindowsFor(opts) {
+  if (opts.checkInHours == null) {
+    // legacy: "timeframe" as the longest you'd wait
+    const maxSec = (opts.buyWithinHours ?? opts.maxWaitHours) * 3600;
+    return [...new Set([...AI_BUY_WINDOWS.filter((w) => w < maxSec), Math.max(maxSec, AI_BUY_WINDOWS[0])])];
+  }
+  const t = Math.max(AI_BUY_WINDOWS[0], opts.checkInHours * 3600);
+  return [...new Set([t, ...LONGER_BUY_WINDOWS.filter((w) => w > t)])];
+}
+function sellWindowsFor(opts) {
+  if (opts.checkInHours == null) return [opts.sellWithinHours * 3600];
+  const t = Math.max(AI_BUY_WINDOWS[0], opts.checkInHours * 3600);
+  return [...new Set([t, ...SELL_WINDOWS.filter((w) => w > t)])];
+}
+// How long the hard volume check allows for: a day, or your check-in interval if longer.
+function volumeWindowFor(opts, side) {
+  if (opts.checkInHours == null) {
+    return (side === 'buy' ? (opts.buyWithinHours ?? opts.maxWaitHours) : (opts.sellWithinHours ?? opts.maxWaitHours)) * 3600;
+  }
+  return Math.max(86400, opts.checkInHours * 3600);
+}
+
 // How many batch sizes to try when choosing the best one.
 const BATCH_STEPS = 4;
 const batchHints = new Map(); // recipe + settings -> last best batch
@@ -57,7 +85,7 @@ function volumeCheck(recipe, inputs, output, share, buyWindowSec, sellWindowSec)
     if (perDay == null) return;
     const canGet = (share * perDay * windowSec) / 86400; // units you can expect in the window
     const crafts = Math.floor(canGet / perCraft);
-    lines.push({ name: item.name, side, perDay, canGet, crafts });
+    lines.push({ name: item.name, side, perDay, canGet, crafts, windowSec });
     maxBatch = Math.min(maxBatch, crafts);
   };
   inputs.forEach((inp) => add(inp.item, inp.qty, buyWindowSec, 'buy'));
@@ -107,7 +135,7 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
       instaBuy: inp.item.latest.high, instaSell: inp.item.latest.low,
     })),
     sell: { name: output.name, id: output.id, icon: output.icon, qty: outQty, perDay: dailyVolume(output), price: sell.price, tax: taxEach,
-      expectedNet: sell.net ?? null, ai: !!sell.ai, pFill: sell.pFill ?? null,
+      expectedNet: sell.net ?? null, ai: !!sell.ai, pFill: sell.pFill ?? null, windowSec: sell.windowSec ?? null,
       median: sellSeconds, p90: sell.p90 * tf, instaBuy: output.latest.high, instaSell: output.latest.low },
     cost, revenue, taxTotal, profit,
     profitPerCraft: profit / n,
@@ -134,9 +162,8 @@ function score(plan, objective) {
 // several time windows, and keep the ones where waiting longer is cheaper.
 // (No separate "pay the ask now" option: the AI's shortest window already
 // covers quick buys, priced with its own view of how likely they are to fill.)
-function aiBuyCurve(advisor, item, qty, maxSec, opts) {
-  // every standard window up to your timeframe, plus the timeframe itself
-  const windows = [...new Set([...AI_BUY_WINDOWS.filter((w) => w < maxSec), Math.max(maxSec, AI_BUY_WINDOWS[0])])];
+function aiBuyCurve(advisor, item, qty, opts) {
+  const windows = buyWindowsFor(opts);
   const limitSec = buyLimitSeconds(qty, item.limit);
   const pts = [];
   for (const w of windows) {
@@ -174,7 +201,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const val = (r) => (r.status === 'ok' ? score(r.plan, opts.objective) : -Infinity);
   // Last minute's winner is usually still close, so start from there when we
   // have one; otherwise spread sizes log-evenly between 1 and the maximum.
-  const hintKey = `${recipe.id}:${opts.capital}:${opts.riskAversion}:${opts.buyWithinHours}:${opts.sellWithinHours}`;
+  const hintKey = `${recipe.id}:${opts.capital}:${opts.riskAversion}:${opts.buyWithinHours}:${opts.sellWithinHours}:${opts.checkInHours}`;
   const hint = batchHints.get(hintKey);
   let rounds = 2;
   if (hint && hint <= nMax) {
@@ -224,25 +251,29 @@ function evaluateAtBatch(recipe, getItem, opts) {
   const noPrice = [...inputs.map((i) => i.item), output].filter((it) => !it.latest || (!it.latest.high && !it.latest.low));
   if (noPrice.length) return { ...base, status: 'nodata', missing: noPrice.map((i) => i.name) };
 
-  const vol = volumeCheck(recipe, inputs, output, opts.share,
-    (opts.buyWithinHours ?? opts.maxWaitHours) * 3600, (opts.sellWithinHours ?? opts.maxWaitHours) * 3600);
+  const vol = volumeCheck(recipe, inputs, output, opts.share, volumeWindowFor(opts, 'buy'), volumeWindowFor(opts, 'sell'));
   let n = batchSize(recipe, inputs, opts.capital, opts.maxActive);
   // never plan more than the market can supply in your timeframe
   if (!recipe.batch && Number.isFinite(vol.maxBatch)) n = Math.max(1, Math.min(n, vol.maxBatch));
   // Let the price AI pick buy prices where it can; otherwise use the fill-time model.
   const buyCurves = inputs.map((inp) => (opts.buyAdvisor
-    ? aiBuyCurve(opts.buyAdvisor, inp.item, inp.qty * n, (opts.buyWithinHours ?? opts.maxWaitHours) * 3600, opts) : null)
+    ? aiBuyCurve(opts.buyAdvisor, inp.item, inp.qty * n, opts) : null)
     || priceCurve(inp.item, 'buy', inp.qty * n, opts));
   const sellCurve = priceCurve(output, 'sell', recipe.output.qty * n, opts);
   // If the sell-price AI is available, let it pick the sell price; otherwise
   // list at or under the market within the sell window.
-  const ai = opts.sellAdvisor ? opts.sellAdvisor(output, recipe.output.qty * n, opts.sellWithinHours * 3600) : null;
+  // One AI sell option per window (priced to sell by your next check, or left
+  // up across a few checks); the plan search picks the best for gp/h.
+  const aiSells = opts.sellAdvisor
+    ? sellWindowsFor(opts).map((w) => [w, opts.sellAdvisor(output, recipe.output.qty * n, w)]).filter(([, a]) => a) : [];
+  const ai = aiSells.length ? aiSells[0][1] : null;
   let sellChoices;
-  if (!ai) {
+  if (!aiSells.length) {
     sellChoices = sellOptions(output, recipe.output.qty * n, opts, undefined, undefined, sellCurve).points;
   } else {
-    // ai.median includes dumping at market (which also takes time) if it doesn't sell
-    sellChoices = [{ price: ai.price, net: ai.expected, bad: ai.bad, median: Math.max(60, ai.median), p90: ai.p90, pFill: ai.pFill, ai: true }];
+    // a.median includes dumping at market (which also takes time) if it doesn't sell
+    sellChoices = aiSells.map(([w, a]) => ({ price: a.price, net: a.expected, bad: a.bad, median: Math.max(60, a.median),
+      p90: a.p90, pFill: a.pFill, ai: true, windowSec: w }));
   }
   const empty = [...buyCurves.map((c, i) => [c, inputs[i].item.name]), [sellCurve, output.name]]
     .filter(([c]) => c.points.length === 0).map(([, name]) => name);
@@ -290,10 +321,10 @@ function evaluateAtBatch(recipe, getItem, opts) {
   if (series.includes('1h')) flags.push('thin market (hourly data)');
   const tooThin = vol.lines.filter((l) => l.crafts < 1);
   for (const l of tooThin) {
-    flags.push(`${l.name} only trades ~${Math.round(l.perDay).toLocaleString()}/day: not enough to ${l.side} even one craft's worth in your timeframe`);
+    flags.push(`${l.name} only trades ~${Math.round(l.perDay).toLocaleString()}/day: not enough to ${l.side} even one craft's worth ${l.windowSec >= 86400 ? `in ${l.windowSec > 86400 ? Math.round(l.windowSec / 3600) + ' hours' : 'a day'}` : 'in your timeframe'}`);
   }
   if (!tooThin.length && Number.isFinite(vol.maxBatch) && n > vol.maxBatch) {
-    flags.push(`batch of ${n} is more than the market trades in your timeframe (about ${vol.maxBatch})`);
+    flags.push(`batch of ${n} is more than the market trades in ${vol.lines[0] && vol.lines[0].windowSec >= 86400 ? 'a day' : 'your timeframe'} (about ${vol.maxBatch})`);
   }
   const warn = [output, ...inputs.map((i) => i.item)].flatMap((it) =>
     warnings(it).map((w) => ({ ...w, item: it.name })));
@@ -322,4 +353,4 @@ function evaluateAtBatch(recipe, getItem, opts) {
   };
 }
 
-module.exports = { evaluateRecipe, batchSize, DEFAULTS, OFFER_SECONDS };
+module.exports = { evaluateRecipe, batchSize, DEFAULTS, OFFER_SECONDS, sellWindowsFor, buyWindowsFor };

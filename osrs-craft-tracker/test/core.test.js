@@ -172,3 +172,38 @@ test('hands-on time counts steps, bank trips and travel to the station', () => {
   const m = maxCraftsWithin(ward, 600);
   assert.ok(craftTime(ward, m) <= 600 && craftTime(ward, m + 1) > 600);
 });
+
+test('"check every" = how often you can change offers, not how long you will wait', () => {
+  const { buyWindowsFor, sellWindowsFor } = require('../src/optimizer');
+  // checking every 8h (overnight): no offer priced for less than 8h, longer ones allowed
+  const w8 = buyWindowsFor({ checkInHours: 8 });
+  assert.strictEqual(Math.min(...w8), 8 * 3600);
+  assert.ok(w8.some((w) => w > 8 * 3600));
+  assert.deepStrictEqual(sellWindowsFor({ checkInHours: 8 }), [8 * 3600, 12 * 3600]);
+  assert.deepStrictEqual(buyWindowsFor({ checkInHours: 0.5 }), [1800, 4 * 3600, 24 * 3600]);
+  // checking every 5 minutes: quick windows available, and longer ones too
+  const w5 = buyWindowsFor({ checkInHours: 5 / 60 });
+  assert.strictEqual(Math.min(...w5), 300);
+  assert.ok(Math.max(...w5) >= 24 * 3600);
+
+  // A 32/day ingredient: with "check every 30m" it is no longer ruled out just
+  // because it can't fill within 30 minutes; the batch is capped by a day's volume.
+  const thin = (name, mid) => {
+    const raw = [];
+    for (let k = 0; k < 288; k++) {
+      const trade = k % 18 === 0;
+      raw.push({ timestamp: k * 300, avgHighPrice: trade ? mid + 5 : null, highPriceVolume: trade ? 1 : 0,
+        avgLowPrice: trade ? mid - 5 : null, lowPriceVolume: trade ? 1 : 0 });
+    }
+    return { id: 1, name, limit: 10_000, latest: { high: mid + 5, low: mid - 5, highTime: Date.now() / 1000, lowTime: Date.now() / 1000 },
+      series5m: normalizeSeries(raw, 300), series1h: [] };
+  };
+  const items = { Rare: thin('Rare', 50_000), Out: mkItem('Out', 80_000, 30) };
+  const recipe = { id: 'rare', category: 'T', inputs: [{ item: 'Rare', qty: 1 }], output: { item: 'Out', qty: 1 }, craftSeconds: 1 };
+  const r = evaluateRecipe(recipe, (n) => items[n], { share: 0.33, capital: 1e12, objective: 'profitPerHour',
+    checkInHours: 0.5, sellWithinHours: 0.5, maxWaitHours: 24 * 14 });
+  assert.strictEqual(r.status, 'ok');
+  assert.ok(!r.flags.some((f) => /only trades/.test(f)), r.flags.join(' | '));
+  assert.ok(r.maxBatch <= Math.floor(0.33 * 32), `max ${r.maxBatch}`); // a day's realistic share
+  assert.ok(r.plan.buySeconds > 3600, 'honest: buying a 32/day item takes hours');
+});

@@ -11,8 +11,12 @@ shields, enchanted bolts, potions and more.
   suggested and is hidden in the table unless you tick "Show bulk processing".
 - **One goal: the best gp/h with the least work.** You choose only three things:
   - **Risk:** Low / Mid / High.
-  - **Timeframe:** how long each buy or sell offer may take. 5m, 30m, 4h, 8h, or a custom
-    value like `90m` or `1d`.
+  - **Check every:** how often you can look at and change your offers. 5m, 30m, 4h, 8h, or a
+    custom value like `90m` or `1d`. This is not a limit on how long crafts may take. Offers
+    are priced to be right until your next check. The AI prices buys for your interval and a
+    few longer windows (about 30m, 4h and 24h), and sells for your interval, 1h and 12h. It
+    never uses anything shorter than your interval, and keeps whichever gives the best gp/h.
+    8h works well for leaving offers overnight.
   - **Your GP.**
 
   Everything else is tuned automatically for risk-adjusted gp per hour of the whole
@@ -147,11 +151,11 @@ The app treats these as follows:
    is included, so an estimate can be longer than your timeframe when that's the truth.
 
    **Hard volume check.** Whatever the models say, no plan may need more than the market
-   actually trades in your timeframe. For each ingredient and the product, the app takes the
-   units traded per day and your expected share (a third), scaled to your timeframe. That
-   caps the batch size. If even one craft's worth can't be bought or sold in time, the craft
-   is flagged (for example "only trades ~32/day") and never suggested. Daily volume is shown
-   next to every ingredient.
+   actually trades in a day (or in your check-in interval, if that's longer). For each
+   ingredient and the product, the app takes the units traded per day and your expected
+   share (a third). That caps the batch size. If not even one craft's worth trades in a day,
+   the craft is flagged (for example "only trades ~2/day") and never suggested. Daily volume
+   is shown next to every ingredient.
 
    **Learns your real fill times.** Each offer placed at a suggested price is recorded with its
    predicted time. When you click **Bought** or **Sold**, the real time is compared with the

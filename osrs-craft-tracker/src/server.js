@@ -235,13 +235,14 @@ function parseSettings(q) {
     const n = Number(v);
     return Number.isFinite(n) && v !== '' && v != null ? Math.min(hi, Math.max(lo, n)) : d;
   };
-  const tf = num(q.get('timeframe'), 240, 5, 72 * 60); // minutes
+  // "timeframe" = how often you check and can change your offers (minutes)
+  const tf = num(q.get('timeframe'), 240, 5, 72 * 60);
   const risk = ['low', 'mid', 'high'].includes(q.get('risk')) ? q.get('risk') : 'mid';
   return {
     timeframeMin: tf,
-    buyWithinHours: tf / 60,
-    sellWithinHours: tf / 60,
-    maxWaitHours: (2 * tf) / 60 + 0.25, // buy + sell + a bit for crafting
+    checkInHours: tf / 60,
+    sellWithinHours: tf / 60,   // fallback sell pricing when the AI is off
+    maxWaitHours: 24 * 14,      // no cap on waiting: gp/h already penalises slow crafts
     capital: num(q.get('capital'), DEFAULTS.capital, 1000, 1e11),
     objective: 'profitPerHour',
     risk,
@@ -373,7 +374,7 @@ async function handlePositions(req, res, url) {
     return sendJson(res, 200, pos);
   }
   positionsRev++;
-  let predictedSec = null;
+  let predictedSec = null, windowSec = null;
   if (body.action === 'reprice-buy' || body.action === 'list') {
     const cur = positions.get(m[1]);
     if (cur && state.lastRefresh) {
@@ -383,10 +384,11 @@ async function handlePositions(req, res, url) {
         const tf = settings.timeFactor || 1;
         const sug = body.action === 'list' ? a : (a.inputs || [])[body.index];
         if (sug && sug.price === Math.round(Number(body.price)) && Number.isFinite(sug.median)) predictedSec = sug.median / tf;
+        if (body.action === 'list' && sug && sug.ai && sug.price === Math.round(Number(body.price))) windowSec = sug.ai.windowSec || null;
       } catch (e) { logError('predict', e); }
     }
   }
-  const pos = positions.act(m[1], { ...body, predictedSec });
+  const pos = positions.act(m[1], { ...body, predictedSec, windowSec });
   return sendJson(res, 200, pos || { deleted: true });
 }
 

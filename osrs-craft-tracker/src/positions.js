@@ -69,7 +69,7 @@ class PositionStore {
 
   // predictedSec: how long we predicted this offer would take at this price
   // (null when you picked your own price), used to learn real fill times.
-  act(id, { action, index, price, predictedSec = null }, now = Date.now()) {
+  act(id, { action, index, price, predictedSec = null, windowSec = null }, now = Date.now()) {
     const pos = this.get(id);
     if (!pos) throw httpError(404, 'No such trade');
     if (action === 'delete') {
@@ -100,6 +100,8 @@ class PositionStore {
         pos.sell.offerPrice = p;
         pos.sell.placedAt = now;
         pos.sell.predictedSec = predictedSec;
+        // the window this listing was priced for (advice uses it to judge progress)
+        pos.sell.windowSec = windowSec;
         break;
       case 'sold': {
         if (pos.status !== 'selling' && pos.status !== 'ready') throw httpError(400, 'Nothing to sell');

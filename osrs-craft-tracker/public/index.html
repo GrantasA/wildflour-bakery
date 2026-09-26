@@ -35,15 +35,15 @@
       </div>
     </div>
     <div class="seg-group">
-      <span class="seg-label" title="How long each buy or sell offer may take to fill">Timeframe</span>
-      <div class="seg" id="tfSeg" role="radiogroup" aria-label="Timeframe">
+      <span class="seg-label" title="How often you can look at and change your offers. Offers are priced to be right until your next check, e.g. 8h = leave them overnight.">Check every</span>
+      <div class="seg" id="tfSeg" role="radiogroup" aria-label="How often you check your offers">
         <button type="button" role="radio" data-tf="5">5m</button>
         <button type="button" role="radio" data-tf="30">30m</button>
         <button type="button" role="radio" data-tf="240">4h</button>
         <button type="button" role="radio" data-tf="480">8h</button>
         <button type="button" role="radio" data-tf="custom">Custom</button>
       </div>
-      <input id="tfCustom" class="tf-custom" type="text" placeholder="e.g. 90m, 2h, 1d" aria-label="Custom timeframe" hidden>
+      <input id="tfCustom" class="tf-custom" type="text" placeholder="e.g. 90m, 2h, 1d"  aria-label="Custom check-in interval" hidden>
     </div>
     <label class="gp-field" title="The GP you have for crafting. The planner spreads it across crafts for the best gp/h.">Your GP
       <input id="capital" type="text" value="100m" inputmode="decimal">

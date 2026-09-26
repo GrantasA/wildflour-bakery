@@ -74,8 +74,8 @@ function explainEmpty({ results, busyItems, maxActiveMinutes, freeCash, freeSlot
   if (!profitable.length) {
     const thin = ok.filter((r) => r.plan.profit > 0 && r.flags.some((f) => /only trades/.test(f))).length;
     return thin
-      ? `No unique craft fits your timeframe right now: ${thin} profitable one(s) trade too slowly to fill in time. Try a longer timeframe (8h or custom, e.g. 1d).`
-      : 'No unique craft is profitable within your timeframe and risk right now. Try a longer timeframe or higher risk.';
+      ? `No unique craft works right now: ${thin} profitable one(s) trade too slowly (less than one craft's worth in a day).`
+      : 'No unique craft is profitable at your risk setting right now. Try Mid or High risk, or check back later.';
   }
   const cand = eligible(results, busyItems, maxActiveMinutes);
   if (!cand.length) return 'The profitable crafts clash with your open trades, look like price spikes, or need too much clicking.';
@@ -180,9 +180,9 @@ function whyNot({ results, suggested, busyItems, maxActiveMinutes, freeGp, floor
     const thin = r.flags.find((f) => /only trades/.test(f));
     const warn = (r.warnings || []).find((w) => w.kind === 'spike' || w.kind === 'crash');
     const perCraft = r.plan.cost / Math.max(1, r.batch);
-    if (thin) reason = thin.replace(/ in your timeframe$/, '') + ' in your timeframe';
-    else if (r.flags.some((f) => /slower than/.test(f))) reason = `takes ~${hrs(r.plan.hours)}, longer than your timeframe allows`;
-    else if (r.flags.some((f) => /more than the market trades/.test(f))) reason = 'batch bigger than the market trades in your timeframe';
+    if (thin) reason = thin;
+    else if (r.flags.some((f) => /slower than/.test(f))) reason = `takes ~${hrs(r.plan.hours)}, too slow to be worth it`;
+    else if (r.flags.some((f) => /more than the market trades/.test(f))) reason = 'batch bigger than the market trades in a day';
     else if (warn) reason = `${warn.item}: ${warn.text}`;
     else if (!(r.plan.riskAdjusted > 0)) reason = `too risky for your risk setting (bad case ${fmtGp(r.plan.badProfit)}, ${Math.round(r.plan.pLoss * 100)}% chance of a loss)`;
     else if (!r.viable) reason = r.flags[0] || 'not viable right now';

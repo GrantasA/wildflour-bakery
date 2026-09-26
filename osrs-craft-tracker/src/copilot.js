@@ -1,6 +1,7 @@
 'use strict';
 
-const { priceCurve, fillAt } = require('./market');
+const { priceCurve, fillAt, sellOptions } = require('./market');
+const { DEFAULTS } = require('./optimizer');
 const { evaluateRecipe } = require('./optimizer');
 const { taxPerItem } = require('./tax');
 const { costOf, breakEvenPrice } = require('./positions');
@@ -51,7 +52,8 @@ function rankCrafts(results, maxActiveMinutes) {
 
 const MIN_BUDGET = 600; // never plan on less than 10 minutes left
 
-function advise(pos, recipe, getItem, opts, now = Date.now()) {
+function advise(pos, recipe, getItem, settings, now = Date.now()) {
+  const opts = { ...DEFAULTS, ...settings };
   if (!recipe) return { kind: 'info', text: 'Recipe no longer exists in recipes.json.' };
   const fresh = evaluateRecipe({ ...recipe, batch: pos.batch }, getItem, opts);
   const output = getItem(pos.sell.name);
@@ -103,27 +105,26 @@ function advise(pos, recipe, getItem, opts, now = Date.now()) {
   if (!output) return { kind: 'info', text: 'No price data for the product' };
   const cost = costOf(pos);
   const breakEven = breakEvenPrice(cost, pos.sell.qty, pos.sell.name);
-  const pts = priceCurve(output, 'sell', pos.sell.qty, opts).points;
+  const opt = sellOptions(output, pos.sell.qty, opts);
+  const pts = opt.all;
   const profitAt = (s) => pos.sell.qty * (s - taxPerItem(s, pos.sell.name)) - cost;
 
   if (pos.status === 'ready') {
-    if (!pts.length) return { kind: 'info', text: 'Not enough trade history to suggest a price', breakEven };
+    if (!opt.points.length) return { kind: 'info', text: 'Not enough trade history to suggest a price', breakEven };
     const craftSec = (recipe.craftSeconds || 3) * pos.batch;
-    let best;
-    if (opts.objective === 'profitPerHour') {
-      best = pts.reduce((b, p) => (profitAt(p.price) / (p.median + craftSec) > profitAt(b.price) / (b.median + craftSec) ? p : b));
-    } else {
-      const fits = pts.filter((p) => p.median <= opts.maxWaitHours * 3600);
-      best = fits.length ? fits[fits.length - 1] : pts[0];
-    }
-    const quick = pts[0];
+    const best = opts.objective === 'profitPerHour'
+      ? opt.points.reduce((b, p) => (profitAt(p.price) / (p.median + craftSec) > profitAt(b.price) / (b.median + craftSec) ? p : b))
+      : opt.points[opt.points.length - 1]; // highest price that still sells within the window
+    const quick = pts.length ? pts[0] : best;
     const p = profitAt(best.price);
     return {
       kind: 'list', price: best.price, median: best.median, breakEven,
       quick: { price: quick.price, median: quick.median, profit: profitAt(quick.price) },
       projectedProfit: p,
       text: p >= 0
-        ? `Craft your ${pos.batch}, then list ${pos.sell.qty.toLocaleString()} at ${fmt(best.price)}. Likely sells in ~${dur(best.median)} for ~${fmt(p)} profit.`
+        ? `Craft your ${pos.batch}, then list ${pos.sell.qty.toLocaleString()} at ${fmt(best.price)}` +
+          (Number.isFinite(opt.cap) && best.price === opt.cap ? ' (1gp under the current market)' : '') +
+          `. Likely sells in ~${dur(best.median)} (slow case ~${dur(best.p90)}) for ~${fmt(p)} profit.`
         : `The market fell. At ${fmt(best.price)} you'd lose ~${fmt(-p)}. Break-even is ${fmt(breakEven)}, so holding may be better.`,
     };
   }
@@ -131,17 +132,19 @@ function advise(pos, recipe, getItem, opts, now = Date.now()) {
   if (pos.status === 'selling') {
     const offer = pos.sell.offerPrice;
     const cur = fillAt(output, 'sell', pos.sell.qty, offer, opts);
-    const remaining = Math.max(MIN_BUDGET,
-      (pos.sell.placedAt + Math.max(pos.plannedSellSeconds, 1800) * 1000 - now) / 1000);
+    const remaining = Math.max(MIN_BUDGET, (pos.sell.placedAt + opts.sellWithinHours * 3600 * 1000 - now) / 1000);
     const base = { breakEven, median: cur.median, projectedProfit: profitAt(offer),
       checkInSeconds: Math.round(Math.max(120, Math.min(1800, cur.median / 4))) };
-    if (!pts.length) return { ...base, kind: 'keep', text: 'Not enough trade history to advise' };
-    const fits = pts.filter((p) => p.median <= remaining);
-    const target = fits.length ? fits[fits.length - 1] : pts[0];
-    if (target.price < offer && cur.median > remaining * 1.25) {
+    const market = sellOptions(output, pos.sell.qty, opts, remaining);
+    if (!market.points.length) return { ...base, kind: 'keep', text: 'Not enough trade history to advise' };
+    const target = market.points[market.points.length - 1];
+    const overMarket = Number.isFinite(market.cap) && offer > market.cap + 1;
+    if (target.price < offer && (overMarket || cur.median > remaining)) {
       const loss = profitAt(target.price) < 0;
       return { ...base, kind: 'lower', price: target.price,
-        text: `Lower to ${fmt(target.price)}. At ${fmt(offer)} it's likely to take ~${dur(cur.median)}.` +
+        text: `Lower to ${fmt(target.price)}. ` + (overMarket
+          ? `Other sellers are now listing under your ${fmt(offer)}.`
+          : `At ${fmt(offer)} it's likely to take ~${dur(cur.median)}.`) +
           (loss ? ` Careful: that's under break-even (${fmt(breakEven)}), a ~${fmt(-profitAt(target.price))} loss.` : '') };
     }
     if (target.price > offer * 1.01) {

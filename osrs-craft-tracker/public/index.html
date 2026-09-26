@@ -37,6 +37,9 @@
     <label title="Longest a whole cycle (buy + craft + sell) may take">Max GE wait (hours)
       <input id="maxWait" type="number" min="0.1" step="1" value="24">
     </label>
+    <label title="Sell prices are picked so the sale finishes within this time even in the slow case, and never above the current market price">Sell within (hours)
+      <input id="sellWithin" type="number" min="0.1" step="0.5" value="2">
+    </label>
     <label title="Crafts needing more hands-on time than this per batch are hidden">Max hands-on time (min)
       <input id="maxActive" type="number" min="1" step="1" value="15">
     </label>

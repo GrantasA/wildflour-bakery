@@ -1,11 +1,12 @@
 'use strict';
 
-const { priceCurve, fillAt } = require('./market');
+const { priceCurve, fillAt, sellOptions } = require('./market');
 const { taxPerItem } = require('./tax');
 
 const DEFAULTS = {
   share: 0.5,          // fraction of matching market flow your offer captures
   maxWaitHours: 24,    // ignore plans slower than this
+  sellWithinHours: 2,  // list at a price that sells within this, even in the slow case
   capital: 100_000_000,
   objective: 'profitPerHour', // or 'profit', or 'activeProfit'
 };
@@ -91,6 +92,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const n = batchSize(recipe, inputs, opts.capital);
   const buyCurves = inputs.map((inp) => priceCurve(inp.item, 'buy', inp.qty * n, opts));
   const sellCurve = priceCurve(output, 'sell', recipe.output.qty * n, opts);
+  const sellChoices = sellOptions(output, recipe.output.qty * n, opts).points;
   const empty = [...buyCurves.map((c, i) => [c, inputs[i].item.name]), [sellCurve, output.name]]
     .filter(([c]) => c.points.length === 0).map(([, name]) => name);
   if (empty.length) return { ...base, status: 'nodata', batch: n, missing: empty };
@@ -119,7 +121,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
       buys.push(choice);
     }
     if (buys.length !== buyCurves.length) continue;
-    for (const s of sellCurve.points) {
+    for (const s of sellChoices) {
       const plan = evaluatePlan(recipe, inputs, output, n, buys, s);
       if (!fastest || plan.seconds < fastest.seconds) fastest = plan;
       if (plan.seconds > maxSec) continue;

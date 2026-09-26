@@ -5,7 +5,7 @@ const els = {
   rows: $('rows'), picks: $('picks'), positions: $('positions'), history: $('history'), chart: $('chart'),
   live: $('live'), liveText: $('liveText'), mock: $('mock'), hidden: $('hidden'), tooltip: $('tooltip'),
   settings: $('settings'), settingsBtn: $('settingsBtn'),
-  objective: $('objective'), maxWait: $('maxWait'), maxActive: $('maxActive'), capital: $('capital'), share: $('share'),
+  objective: $('objective'), sellWithin: $('sellWithin'), maxWait: $('maxWait'), maxActive: $('maxActive'), capital: $('capital'), share: $('share'),
   search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
   dialog: $('startDialog'), form: $('startForm'), startRecipe: $('startRecipe'), startBatch: $('startBatch'),
   startBought: $('startBought'), startInputs: $('startInputs'), startInfo: $('startInfo'), startError: $('startError'),
@@ -54,10 +54,10 @@ function when(ts) {
 }
 
 // ---------- settings ----------
-const SETTINGS = ['objective', 'maxWait', 'maxActive', 'capital', 'share'];
+const SETTINGS = ['objective', 'sellWithin', 'maxWait', 'maxActive', 'capital', 'share'];
 function query() {
   const p = new URLSearchParams({
-    objective: els.objective.value, maxWait: els.maxWait.value,
+    objective: els.objective.value, maxWait: els.maxWait.value, sellWithin: els.sellWithin.value,
     maxActive: els.maxActive.value, share: els.share.value,
   });
   const cap = parseGp(els.capital.value);

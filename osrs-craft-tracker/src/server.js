@@ -131,6 +131,7 @@ function parseSettings(q) {
     capital: num(q.get('capital'), DEFAULTS.capital, 1000, 1e11),
     objective: ['profit', 'activeProfit'].includes(q.get('objective')) ? q.get('objective') : 'profitPerHour',
     maxActive: num(q.get('maxActive'), 15, 0.5, 24 * 60),
+    sellWithinHours: num(q.get('sellWithin'), DEFAULTS.sellWithinHours, 0.05, 24 * 7),
   };
 }
 

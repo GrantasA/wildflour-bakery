@@ -75,7 +75,15 @@ The app treats these as follows:
    - **Total profit**: the most profit per batch that fits in **Max wait**.
 
    Plans longer than **Max wait** are flagged, greyed out and listed after the ones that fit.
-4. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
+4. **Sell price.** This is the part Flipping Copilot users will recognise. The app never
+   lists above the current market: at most 1gp under the latest insta-buy price, which
+   undercuts the cheapest seller. It also only picks prices that should sell within
+   **Sell within** (default 2 hours) even in the slow case (p90), not just on average. If
+   your listing isn't filling in time, or other sellers undercut you, the Copilot tells you
+   to lower it. If the market rises, it suggests relisting higher. Flipping Copilot's own
+   pricing runs on its private server, so it can't be copied; this follows the same visible
+   behaviour.
+5. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
    your **Capital** setting.
 
 Each row also shows the instant plan (buy at the current asking price, sell into the current

@@ -90,3 +90,29 @@ test('rankCrafts scores viable crafts and respects the hands-on time limit', () 
   assert.deepStrictEqual(ranked.map((r) => r.id), ['t']);
   assert.ok(ranked[0].score >= 0 && ranked[0].score <= 100);
 });
+
+test('sell price: never above the current market, sells within the window in the slow case', () => {
+  const { sellOptions } = require('../src/market');
+  const out = items.Out; // latest.high = 2003
+  const opt = sellOptions(out, 5, { ...opts, sellWithinHours: 2 });
+  assert.strictEqual(opt.cap, 2002);
+  assert.ok(opt.points.length > 0);
+  for (const p of opt.points) {
+    assert.ok(p.price <= 2002, `price ${p.price}`);
+    assert.ok(p.p90 <= 2 * 3600, `p90 ${p.p90}`);
+  }
+  const r = evaluateRecipe(recipe, getItem, opts);
+  assert.ok(r.plan.sell.price <= 2002);
+  // the uncapped curve would have picked something higher
+  assert.ok(Math.max(...opt.all.map((p) => p.price)) > r.plan.sell.price);
+});
+
+test('selling advice: lower when other sellers undercut you', () => {
+  const store = new PositionStore(tmpFile());
+  const r = evaluateRecipe(recipe, getItem, opts);
+  const pos = store.create({ recipe, batch: r.batch, plan: r.plan, prices: [1000, 500], bought: true });
+  store.act(pos.id, { action: 'list', price: 2100 });
+  const a = advise(store.get(pos.id), recipe, getItem, opts);
+  assert.strictEqual(a.kind, 'lower');
+  assert.ok(a.price <= 2002);
+});

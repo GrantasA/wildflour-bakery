@@ -222,7 +222,37 @@ function fillAt(item, side, qty, price, opts) {
   };
 }
 
+// Sell prices worth listing at, Flipping-Copilot style: never above the
+// current market (1gp under the latest insta-buy price, i.e. undercut the
+// cheapest seller) and only prices that should sell within the sell window
+// even in the slow case (p90), not just on a lucky day. Sorted fastest first.
+const MARKET_FRESH_SECONDS = 2 * 3600;
+function sellOptions(item, qty, opts, windowSec = (opts.sellWithinHours ?? 2) * 3600, nowSec = Date.now() / 1000) {
+  const curve = priceCurve(item, 'sell', qty, opts);
+  const all = curve.points;
+  const l = item.latest || {};
+  const cap = l.high && nowSec - (l.highTime || 0) <= MARKET_FRESH_SECONDS ? Math.max(1, l.high - 1) : Infinity;
+  const allowed = all.filter((p) => p.price <= cap && p.p90 <= windowSec);
+  if (Number.isFinite(cap) && !allowed.some((p) => p.price === cap)) {
+    const f = fillAt(item, 'sell', qty, cap, opts);
+    if (f.p90 <= windowSec) allowed.push({ price: cap, ...f });
+  }
+  let points = allowed;
+  if (!points.length) {
+    // Nothing is safe inside the window: fall back to the quickest sale at or under market.
+    const under = all.filter((p) => p.price <= cap);
+    const pool = under.length ? under : all;
+    points = pool.length ? [pool.reduce((a, b) => (b.median < a.median ? b : a))] : [];
+  }
+  // keep only the frontier: each slower option must pay more
+  points.sort((a, b) => a.median - b.median || b.price - a.price);
+  const frontier = [];
+  for (const p of points) if (!frontier.length || p.price > frontier[frontier.length - 1].price) frontier.push(p);
+  return { points: frontier, all, series: curve.series, cap };
+}
+
 module.exports = {
+  sellOptions,
   normalizeSeries, matchableVolumes, fillTimeStats, buyLimitSeconds,
   pickSeries, detrend, candidatePrices, priceCurve, fillAt, FOUR_HOURS, MIN_FILL_SECONDS,
 };

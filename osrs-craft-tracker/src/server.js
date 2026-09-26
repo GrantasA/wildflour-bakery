@@ -122,7 +122,7 @@ function parseSettings(q) {
     share: num(q.get('share'), DEFAULTS.share, 0.01, 1),
     maxWaitHours: num(q.get('maxWait'), DEFAULTS.maxWaitHours, 0.05, 24 * 14),
     capital: num(q.get('capital'), DEFAULTS.capital, 1000, 1e11),
-    objective: q.get('objective') === 'profit' ? 'profit' : 'profitPerHour',
+    objective: ['profit', 'activeProfit'].includes(q.get('objective')) ? q.get('objective') : 'profitPerHour',
   };
 }
 

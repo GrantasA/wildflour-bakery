@@ -52,9 +52,18 @@ The app treats these as follows:
 3. **Optimisation.** Inputs are bought in parallel GE slots, so the buy phase lasts as long as
    the slowest input. The app tries every buy-time budget, takes the cheapest price per input
    that fills within it, and pairs that with every sell option. Cycle time is buy time, plus
-   craft time, plus sell time. It then picks the plan with the highest **profit per hour**, or
-   the highest **total profit** if you choose that. Plans longer than **Max wait** are
-   excluded.
+   craft time, plus sell time. It then picks the plan according to the **Optimise for**
+   setting:
+   - **Profit per hour**: the most profit per hour of the whole cycle, GE waiting included.
+     This favours fast flips.
+   - **Profit per active hour**: the most profit for your hands-on time (crafting plus about
+     15 seconds per GE offer). GE waiting is free here, so the app takes the cheapest buys
+     that still fit in **Max wait**. Use this to find crafts that are slow to buy but quick to
+     make. The **Max active time** filter hides crafts that need more of your time than you
+     want to give.
+   - **Total profit**: the most profit per batch that fits in **Max wait**.
+
+   Plans longer than **Max wait** are flagged, greyed out and listed after the ones that fit.
 4. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
    your **Capital** setting.
 
@@ -92,5 +101,7 @@ Edit `src/recipes.json`. The server picks up changes on the next refresh.
   crashes break that assumption.
 - The API only provides average prices per bucket, so the ladders are approximate within about
   1% of price.
-- Only crafts whose ingredients are all tradeable are included. For example, the amulet of
+- Only crafts whose ingredients and product are all tradeable are included. If a recipe
+  mentions an item the GE doesn't list, that craft is hidden, and a note under the table says
+  which item caused it. For example, the amulet of
   rancour needs an untradeable araxyte fang, so it isn't listed.

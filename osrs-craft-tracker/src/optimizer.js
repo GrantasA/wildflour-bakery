@@ -7,8 +7,11 @@ const DEFAULTS = {
   share: 0.5,          // fraction of matching market flow your offer captures
   maxWaitHours: 24,    // ignore plans slower than this
   capital: 100_000_000,
-  objective: 'profitPerHour', // or 'profit'
+  objective: 'profitPerHour', // or 'profit', or 'activeProfit'
 };
+
+// Hands-on time to place and collect one GE offer.
+const OFFER_SECONDS = 15;
 
 // How many crafts to plan per cycle: as many as every input's 4-hour buy limit
 // allows, capped by the capital you're willing to tie up.
@@ -33,7 +36,11 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell) {
   const taxTotal = taxEach * outQty;
   const profit = revenue - taxTotal - cost;
   const buySeconds = Math.max(...buys.map((b) => b.median));
-  const seconds = buySeconds + (recipe.craftSeconds || 3) * n + sell.median;
+  const craftSeconds = (recipe.craftSeconds || 3) * n;
+  const seconds = buySeconds + craftSeconds + sell.median;
+  // Time you actually spend at the keyboard: placing/collecting offers and
+  // crafting. GE waiting is passive, so it doesn't count here.
+  const activeSeconds = craftSeconds + OFFER_SECONDS * (inputs.length + 1);
   return {
     inputs: inputs.map((inp, i) => ({
       name: inp.item.name, id: inp.item.id, qty: inp.qty * n, price: buys[i].price,
@@ -47,12 +54,16 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell) {
     buySeconds, seconds,
     hours: seconds / 3600,
     profitPerHour: profit / (seconds / 3600),
+    craftSeconds, activeSeconds,
+    profitPerActiveHour: profit / (activeSeconds / 3600),
     roi: cost > 0 ? profit / cost : 0,
   };
 }
 
 function score(plan, objective) {
-  return objective === 'profit' ? plan.profit : plan.profitPerHour;
+  // Active time is fixed for a given batch, so maximising profit per active
+  // hour means taking the most profit the max-wait allows: patient buys.
+  return objective === 'profitPerHour' ? plan.profitPerHour : plan.profit;
 }
 
 function evaluateRecipe(recipe, getItem, settings = {}) {

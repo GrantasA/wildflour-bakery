@@ -77,3 +77,4 @@ footer { color: var(--muted); font-size: 12px; padding-top: 12px; padding-bottom
 footer a { color: var(--accent); }
 .scroll { overflow-x: auto; max-width: 100%; }
 tr.detail > td { max-width: 0; }
+.hidden-note { max-width: 1400px; margin: 8px auto 0; padding: 0 16px; color: var(--muted); font-size: 12px; }

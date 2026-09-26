@@ -19,6 +19,7 @@
     <label>Optimise for
       <select id="objective">
         <option value="profitPerHour">Profit per hour</option>
+        <option value="activeProfit">Profit per active hour (slow buys, quick crafts)</option>
         <option value="profit">Total profit (within max wait)</option>
       </select>
     </label>
@@ -30,6 +31,9 @@
     </label>
     <label title="Fraction of matching market volume your offer captures against other players. Lower = more conservative wait times.">Market share
       <input id="share" type="number" min="0.05" max="1" step="0.05" value="0.5">
+    </label>
+    <label title="Hide crafts that need more hands-on time than this per batch (crafting + placing offers)">Max active time (min)
+      <input id="maxActive" type="number" min="0" step="1" placeholder="any">
     </label>
     <label>Search
       <input id="search" type="search" placeholder="item or input…">
@@ -52,7 +56,9 @@
           <th data-sort="profit" class="num">Profit</th>
           <th data-sort="profitPerCraft" class="num">Profit / craft</th>
           <th data-sort="hours" class="num">Median cycle</th>
-          <th data-sort="profitPerHour" class="num">Profit / hour</th>
+          <th data-sort="profitPerHour" class="num" title="Profit divided by the whole cycle, GE waiting included">Profit / hour</th>
+          <th data-sort="activeSeconds" class="num" title="Hands-on time per batch: crafting + placing offers. GE waiting doesn't count.">Your time</th>
+          <th data-sort="profitPerActiveHour" class="num" title="Profit per hour of hands-on time">Profit / active hr</th>
           <th data-sort="roi" class="num">ROI</th>
           <th data-sort="instant" class="num">Instant profit</th>
         </tr>
@@ -61,6 +67,7 @@
     </table>
   </main>
 
+  <p id="hidden" class="hidden-note"></p>
   <footer>
     <p>Prices from the <a href="https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices" target="_blank" rel="noopener">OSRS Wiki real-time prices API</a>, refreshed every minute.
     Wait times are modelled by replaying recent trade history. They are estimates, not guarantees.

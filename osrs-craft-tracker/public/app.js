@@ -4,6 +4,7 @@ const $ = (id) => document.getElementById(id);
 const els = {
   rows: $('rows'), status: $('status'), mock: $('mock'),
   objective: $('objective'), maxWait: $('maxWait'), capital: $('capital'), share: $('share'),
+  maxActive: $('maxActive'), hidden: $('hidden'),
   search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
 };
 
@@ -56,7 +57,7 @@ function saveSettings() {
   try {
     localStorage.setItem('osrs-craft-settings', JSON.stringify({
       objective: els.objective.value, maxWait: els.maxWait.value, capital: els.capital.value, share: els.share.value,
-      sortKey, sortAsc,
+      maxActive: els.maxActive.value, sortKey, sortAsc,
     }));
   } catch (e) { /* storage unavailable */ }
 }
@@ -64,7 +65,7 @@ function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('osrs-craft-settings') || 'null');
     if (!s) return;
-    for (const k of ['objective', 'maxWait', 'capital', 'share']) if (s[k] != null) els[k].value = s[k];
+    for (const k of ['objective', 'maxWait', 'capital', 'share', 'maxActive']) if (s[k] != null) els[k].value = s[k];
     if (s.sortKey) { sortKey = s.sortKey; sortAsc = !!s.sortAsc; }
   } catch (e) { /* storage unavailable */ }
 }
@@ -120,14 +121,24 @@ function render() {
     els.category.value = cur;
   }
 
+  // Crafts with an ingredient or product that isn't on the GE can't be done by
+  // buying and selling, so leave them out of the table entirely.
+  const untradeable = data.results.filter((r) => r.status === 'missing');
+  els.hidden.textContent = untradeable.length
+    ? `Hidden: ${untradeable.length} craft(s) with items not tradeable on the GE (${untradeable.map((r) => `${r.name}: ${r.missing.join(', ')}`).join('; ')})`
+    : '';
+  const maxActive = parseFloat(els.maxActive.value);
   const term = els.search.value.trim().toLowerCase();
   let rows = data.results.filter((r) => {
+    if (r.status === 'missing') return false;
+    if (Number.isFinite(maxActive) && (r.status !== 'ok' || r.plan.activeSeconds > maxActive * 60)) return false;
     if (els.category.value && r.category !== els.category.value) return false;
     if (els.viableOnly.checked && !r.viable) return false;
     if (term && !(r.name.toLowerCase().includes(term) || (r.ingredients || []).some((i) => i.item.toLowerCase().includes(term)))) return false;
     return true;
   });
   rows.sort((a, b) => {
+    if (!!a.viable !== !!b.viable) return a.viable ? -1 : 1; // viable crafts first
     const va = sortValue(a), vb = sortValue(b);
     const c = va < vb ? -1 : va > vb ? 1 : 0;
     return sortAsc ? c : -c;
@@ -139,19 +150,21 @@ function render() {
   });
 
   if (!data.lastRefresh) {
-    els.rows.innerHTML = '<tr><td colspan="11" class="muted">Waiting for first price pull…</td></tr>';
+    els.rows.innerHTML = '<tr><td colspan="13" class="muted">Waiting for first price pull…</td></tr>';
     return;
   }
   els.rows.innerHTML = rows.map(rowHtml).join('') ||
-    '<tr><td colspan="11" class="muted">No crafts match.</td></tr>';
+    '<tr><td colspan="13" class="muted">No crafts match.</td></tr>';
 }
+
+const hi = (objective, html) => (els.objective.value === objective ? `<b>${html}</b>` : html);
 
 function rowHtml(r) {
   const open = expanded.has(r.id);
   const title = `<span class="viable ${r.viable ? 'yes' : ''}"></span>${esc(r.name)}${r.outputQty > 1 ? ` ×${r.outputQty}` : ''}<span class="cat">${esc(r.category)}</span>`;
   if (r.status !== 'ok') {
     const why = r.status === 'missing' ? 'unknown item(s): ' : r.status === 'nodata' ? 'no price data yet: ' : 'error: ';
-    return `<tr class="row dim" data-id="${esc(r.id)}"><td>${title}</td><td colspan="10" class="muted">${esc(why + (r.missing || []).join(', '))}</td></tr>`;
+    return `<tr class="row dim" data-id="${esc(r.id)}"><td>${title}</td><td colspan="12" class="muted">${esc(why + (r.missing || []).join(', '))}</td></tr>`;
   }
   const p = r.plan;
   const flags = r.flags.length ? `<div class="flags">${r.flags.map((f) => `<span class="flag">${esc(f)}</span>`).join('')}</div>` : '';
@@ -161,17 +174,23 @@ function rowHtml(r) {
     <td class="num">${gp(p.cost)}</td>
     <td class="num">${gp(p.sell.price)}</td>
     <td class="num">${gp(p.taxTotal)}</td>
-    <td class="num ${cls(p.profit)}">${gp(p.profit)}</td>
+    <td class="num ${cls(p.profit)}">${hi('profit', gp(p.profit))}</td>
     <td class="num ${cls(p.profitPerCraft)}">${gp(p.profitPerCraft)}</td>
     <td class="num">${dur(p.seconds)}</td>
-    <td class="num ${cls(p.profitPerHour)}"><b>${gp(p.profitPerHour)}</b></td>
+    <td class="num ${cls(p.profitPerHour)}">${hi('profitPerHour', gp(p.profitPerHour))}</td>
+    <td class="num">${dur(p.activeSeconds)}</td>
+    <td class="num ${cls(p.profitPerActiveHour)}">${hi('activeProfit', gp(p.profitPerActiveHour))}</td>
     <td class="num ${cls(p.roi)}">${pct(p.roi)}</td>
     <td class="num ${cls(r.instant.profit)}">${gp(r.instant.profit)}</td>
   </tr>${open ? detailHtml(r) : ''}`;
 }
 
 function ladderHtml(title, curve, side, chosen, qty) {
-  const pts = curve.points.slice(0, 14);
+  let pts = curve.points.slice(0, 14);
+  if (!pts.some((pt) => pt.price === chosen)) {
+    const pick = curve.points.find((pt) => pt.price === chosen);
+    if (pick) pts = [...pts.slice(0, 13), pick];
+  }
   return `<div class="scroll"><h3>${esc(title)} <span class="muted">(${side === 'buy' ? 'buy' : 'sell'} ${qty.toLocaleString()}, ${esc(curve.series)} history)</span></h3>
     <table class="ladder"><thead><tr><th class="num">Offer price</th><th class="num">Median fill</th><th class="num">Slow case (p90)</th></tr></thead><tbody>
     ${pts.map((pt) => `<tr><td class="num ${pt.price === chosen ? 'best' : ''}">${gpExact(pt.price)}</td><td class="num">${dur(pt.median)}</td><td class="num">${dur(pt.p90)}</td></tr>`).join('')}
@@ -185,7 +204,7 @@ function detailHtml(r) {
       <td class="num"><b>${gpExact(x.price)}</b></td><td class="num">${gpExact(x.instaSell)}</td><td class="num">${gpExact(x.instaBuy)}</td>
       <td class="num">${dur(x.median)}</td><td class="num">${dur(x.p90)}</td></tr>`).join('');
   const s = p.sell;
-  return `<tr class="detail"><td colspan="11"><div class="detail"><div class="scroll">
+  return `<tr class="detail"><td colspan="13"><div class="detail"><div class="scroll">
     <p class="muted">${esc(r.skills || '')}${r.notes ? ' · ' + esc(r.notes) : ''}${r.coins ? ` · ${gpExact(r.coins)} gp fee per craft` : ''}</p>
     <h3>Recommended offers (batch of ${r.batch})</h3>
     <table><thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Offer at</th><th class="num">Insta-sell now</th><th class="num">Insta-buy now</th><th class="num">Median fill</th><th class="num">p90 fill</th></tr></thead>
@@ -194,7 +213,7 @@ function detailHtml(r) {
         <td class="num">${gpExact(s.instaSell)}</td><td class="num">${gpExact(s.instaBuy)}</td><td class="num">${dur(s.median)}</td><td class="num">${dur(s.p90)}</td></tr>
     </tbody></table></div>
     <p>Cost ${gpExact(p.cost)} · revenue ${gpExact(p.revenue)} · tax ${gpExact(p.taxTotal)} (${gpExact(s.tax)} each) ·
-      <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> over ~${dur(p.seconds)} (buy ${dur(p.buySeconds)}, sell ${dur(s.median)})</p>
+      <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> over ~${dur(p.seconds)} (buy ${dur(p.buySeconds)}, craft ${dur(p.craftSeconds)}, sell ${dur(s.median)}) · your hands-on time ~${dur(p.activeSeconds)}</p>
     <p class="muted">Instant alternative (buy at ask, sell into bid): profit ${gpExact(i.profit)} over ~${dur(i.seconds)} → ${gp(i.profitPerHour)}/h</p>
     <div class="detail-grid">
       ${ladderHtml('Sell ' + r.curves.output.name, r.curves.output, 'sell', s.price, s.qty)}
@@ -212,11 +231,14 @@ els.rows.addEventListener('click', (e) => {
 });
 document.querySelectorAll('th[data-sort]').forEach((th) => th.addEventListener('click', () => {
   if (sortKey === th.dataset.sort) sortAsc = !sortAsc;
-  else { sortKey = th.dataset.sort; sortAsc = sortKey === 'name' || sortKey === 'hours'; }
+  else { sortKey = th.dataset.sort; sortAsc = ['name', 'hours', 'activeSeconds'].includes(sortKey); }
   saveSettings();
   render();
 }));
 let debounce;
+const OBJECTIVE_SORT = { profitPerHour: 'profitPerHour', activeProfit: 'profitPerActiveHour', profit: 'profit' };
+els.objective.addEventListener('change', () => { sortKey = OBJECTIVE_SORT[els.objective.value]; sortAsc = false; });
+els.maxActive.addEventListener('input', () => { saveSettings(); if (data) render(); });
 for (const k of ['objective', 'maxWait', 'capital', 'share']) {
   els[k].addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => { saveSettings(); load(); }, 300); });
 }

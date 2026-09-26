@@ -98,3 +98,14 @@ test('detrend maps an old price level onto the current one', () => {
   assert.ok(Math.abs((out[0].avgHigh + out[0].avgLow) / 2 - 1595) < 60, String(out[0].avgHigh));
   assert.ok(out[0].avgHigh > out[0].avgLow);
 });
+
+test('active time excludes GE waiting; activeProfit objective takes the patient plan', () => {
+  const items = { A: mkItem('A', 1000, 30), Out: mkItem('Out', 1100, 30) };
+  const recipe = { id: 'p', category: 'Test', inputs: [{ item: 'A', qty: 1 }], output: { item: 'Out', qty: 1 }, batch: 20, craftSeconds: 2 };
+  const fast = evaluateRecipe(recipe, (n) => items[n], { share: 0.5, maxWaitHours: 24, capital: 1e9, objective: 'profitPerHour' });
+  const patient = evaluateRecipe(recipe, (n) => items[n], { share: 0.5, maxWaitHours: 24, capital: 1e9, objective: 'activeProfit' });
+  assert.strictEqual(patient.plan.activeSeconds, 20 * 2 + 15 * 2);
+  assert.ok(patient.plan.seconds > patient.plan.activeSeconds);
+  assert.ok(patient.plan.profit >= fast.plan.profit);
+  assert.ok(patient.plan.profitPerActiveHour >= fast.plan.profitPerActiveHour);
+});

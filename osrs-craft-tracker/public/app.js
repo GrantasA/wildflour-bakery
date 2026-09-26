@@ -5,6 +5,7 @@ const els = {
   rows: $('rows'), picks: $('picks'), positions: $('positions'), history: $('history'), chart: $('chart'),
   live: $('live'), liveText: $('liveText'), mock: $('mock'), hidden: $('hidden'), tooltip: $('tooltip'),
   settings: $('settings'), settingsBtn: $('settingsBtn'),
+  aiBar: $('aiBar'), useAI: $('useAI'),
   objective: $('objective'), sellWithin: $('sellWithin'), maxWait: $('maxWait'), maxActive: $('maxActive'), capital: $('capital'), share: $('share'),
   search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
   dialog: $('startDialog'), form: $('startForm'), startRecipe: $('startRecipe'), startBatch: $('startBatch'),
@@ -58,7 +59,7 @@ const SETTINGS = ['objective', 'sellWithin', 'maxWait', 'maxActive', 'capital', 
 function query() {
   const p = new URLSearchParams({
     objective: els.objective.value, maxWait: els.maxWait.value, sellWithin: els.sellWithin.value,
-    maxActive: els.maxActive.value, share: els.share.value,
+    maxActive: els.maxActive.value, share: els.share.value, ai: els.useAI.checked ? '1' : '0',
   });
   const cap = parseGp(els.capital.value);
   if (cap) p.set('capital', cap);
@@ -68,6 +69,7 @@ function saveSettings() {
   try {
     const s = { sortKey, sortAsc };
     for (const k of SETTINGS) s[k] = els[k].value;
+    s.useAI = els.useAI.checked;
     localStorage.setItem('craft-copilot-settings', JSON.stringify(s));
   } catch (e) { /* storage unavailable */ }
 }
@@ -76,6 +78,7 @@ function loadSettings() {
     const s = JSON.parse(localStorage.getItem('craft-copilot-settings') || 'null');
     if (!s) return;
     for (const k of SETTINGS) if (s[k] != null && s[k] !== '') els[k].value = s[k];
+    if (s.useAI != null) els.useAI.checked = s.useAI;
     if (s.sortKey) { sortKey = s.sortKey; sortAsc = !!s.sortAsc; }
   } catch (e) { /* storage unavailable */ }
 }
@@ -115,6 +118,7 @@ const tooMuchWork = (r) => r.status === 'ok' && r.plan.activeSeconds > maxActive
 function render() {
   renderStatus();
   renderKpis();
+  renderAI();
   renderPicks();
   renderPositions();
   renderTable();
@@ -153,6 +157,51 @@ function renderKpis() {
   document.title = act ? `(${act}) Action needed · Craft Copilot` : 'Craft Copilot';
 }
 
+function renderAI() {
+  const a = data.ai;
+  if (!a || !data.lastRefresh) { els.aiBar.hidden = true; return; }
+  els.aiBar.hidden = false;
+  const bt = a.backtest;
+  els.aiBar.className = 'ai-bar' + (a.active ? '' : ' paused');
+  let status, facts = '';
+  if (!a.on) status = 'Off: selling at 1gp under the market';
+  else if (!bt) status = 'Active · still testing itself on recent history…';
+  else if (!a.active) status = 'Paused: it did worse than plain undercutting in its latest test, so the app is undercutting by 1gp instead';
+  else status = `Active · picks sell prices from similar past charts (sell within ${dur(a.windowSec)})`;
+  if (bt) {
+    const up = bt.upliftVsUndercut * 100;
+    facts = `<div class="ai-facts">
+      <span>Backtest on <b>${bt.tests}</b> recent moments</span>
+      <span>vs undercutting: <b class="${cls(up)}">${up >= 0 ? '+' : ''}${up.toFixed(2)}%</b> per sale</span>
+      <span>beat it <b>${Math.round(bt.winRate * 100)}%</b> of the time</span>
+      <span>said it'd sell <b>${Math.round(bt.predictedFill * 100)}%</b>, actually sold <b>${Math.round(bt.actualFill * 100)}%</b></span>
+    </div>`;
+  }
+  els.aiBar.innerHTML = `<div class="ai-title">🤖 Sell-price AI</div><div class="muted">${esc(status)}</div>${facts}`;
+}
+
+// Small chart of what buyers paid recently, with the AI's price and break-even.
+function sparkHtml(ai, breakEven) {
+  const pts = (ai.spark || []).filter((p) => p[1]);
+  if (pts.length < 4) return '';
+  const W = 520, H = 90, m = { l: 4, r: 64, t: 8, b: 14 };
+  const vals = [...pts.map((p) => p[1]), ai.price, ...(breakEven ? [breakEven] : [])];
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi === lo) hi = lo + 1;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
+  const x = (t) => m.l + ((t - t0) / Math.max(1, t1 - t0)) * (W - m.l - m.r);
+  const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (H - m.t - m.b);
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join('');
+  const hrs = Math.round((t1 - t0) / 3600);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Price buyers paid over the last ${hrs} hours, with the AI's suggested price">
+    <path class="s-line" d="${d}"/>
+    ${breakEven ? `<line class="s-be" x1="${m.l}" x2="${W - m.r}" y1="${y(breakEven)}" y2="${y(breakEven)}"/><text x="${W - m.r + 4}" y="${y(breakEven) + 3}">break-even</text>` : ''}
+    <line class="s-ai" x1="${m.l}" x2="${W - m.r}" y1="${y(ai.price)}" y2="${y(ai.price)}"/>
+    <text class="s-ai-label" x="${W - m.r + 4}" y="${y(ai.price) + 3}">AI ${esc(gp(ai.price))}</text>
+    <text x="${m.l}" y="${H - 2}">${hrs}h ago</text><text x="${W - m.r}" y="${H - 2}" text-anchor="end">now</text>
+  </svg>`;
+}
+
 function renderPicks() {
   if (!data.lastRefresh) return;
   const byId = resultsById();
@@ -183,7 +232,7 @@ function renderPicks() {
         ${p.inputs.map((i) => `<tr><td>BUY</td><td><span class="item">${icon(i.icon)}${esc(i.name)} ×${i.qty.toLocaleString()}</span></td>
           <td class="num"><b>${gpExact(i.price)}</b> ea</td><td class="num muted">~${dur(i.median)}</td></tr>`).join('')}
         <tr><td>SELL</td><td><span class="item">${icon(p.sell.icon)}${esc(p.sell.name)} ×${p.sell.qty.toLocaleString()}</span></td>
-          <td class="num"><b>${gpExact(p.sell.price)}</b> ea</td><td class="num muted">~${dur(p.sell.median)}</td></tr>
+          <td class="num"><b>${gpExact(p.sell.price)}</b> ea${top.ai ? `<span class="tag-ai" title="${Math.round(top.ai.pFill * 100)}% chance to sell in time, from ${top.ai.neighbours} similar charts">AI</span>` : ''}</td><td class="num muted">~${dur(p.sell.median)}</td></tr>
       </tbody></table>
       <div class="pick-actions"><button class="btn primary" data-start="${esc(top.id)}">Start this craft</button></div>
     </div>
@@ -250,6 +299,7 @@ function positionHtml(p, r) {
       <span class="ctrl"><input data-draft="${key}" inputmode="numeric" value="${esc(draft(key, a.price))}" aria-label="Sell price">
         <button class="btn small primary" data-act="list" data-pos="${p.id}" data-from="${key}">Listed</button>
         <button class="btn small" data-act="sold" data-pos="${p.id}" data-from="${key}">Sold</button></span>
+      ${a.ai ? `<span class="hint" style="grid-column:1/-1">${sparkHtml(a.ai, a.breakEven)}Similar charts peaked around ${gp(a.ai.peaks.q25)} to ${gp(a.ai.peaks.q75)} (typical ${gp(a.ai.peaks.q50)}) within the window.</span>` : ''}
       ${a.quick ? `<span class="hint">Quick sale: ${gpExact(a.quick.price)} sells in ~${dur(a.quick.median)} (${gpSigned(a.quick.profit)})</span>` : ''}
     </div></div>`;
   } else if (p.status === 'selling') {
@@ -259,6 +309,7 @@ function positionHtml(p, r) {
       <span class="what">Listed ${esc(p.sell.name)} ×${p.sell.qty.toLocaleString()} at <b>${gpExact(p.sell.offerPrice)}</b>${a.breakEven ? ` · break-even ${gpExact(a.breakEven)}` : ''}</span>
       <span class="ctrl">${apply}<input data-draft="${key}" inputmode="numeric" value="${esc(draft(key, p.sell.offerPrice))}" aria-label="Sold price">
         <button class="btn small primary" data-act="sold" data-pos="${p.id}" data-from="${key}">Sold</button></span>
+      ${a.ai ? `<span class="hint" style="grid-column:1/-1">${sparkHtml(a.ai, a.breakEven)}</span>` : ''}
     </div></div>`;
   }
   const projected = a.projectedProfit;
@@ -338,7 +389,7 @@ function rowHtml(r) {
     <td>${title}${flags}</td>
     <td class="num">${score}</td>
     <td class="num">${gp(p.cost)}</td>
-    <td class="num">${gp(p.sell.price)}</td>
+    <td class="num">${gp(p.sell.price)}${r.ai ? '<span class="tag-ai">AI</span>' : ''}</td>
     <td class="num ${cls(p.profit)}"><b>${gp(p.profit)}</b></td>
     <td class="num ${cls(p.roi)}">${pct(p.roi)}</td>
     <td class="num">${dur(p.seconds)}</td>
@@ -530,6 +581,7 @@ els.settingsBtn.addEventListener('click', () => {
   els.settingsBtn.setAttribute('aria-expanded', String(!els.settings.hidden));
 });
 let debounce;
+els.useAI.addEventListener('change', () => { saveSettings(); load(); });
 for (const k of SETTINGS) {
   els[k].addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => { saveSettings(); load(); }, 300); });
 }

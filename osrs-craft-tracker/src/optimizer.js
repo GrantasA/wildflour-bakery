@@ -92,7 +92,10 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const n = batchSize(recipe, inputs, opts.capital);
   const buyCurves = inputs.map((inp) => priceCurve(inp.item, 'buy', inp.qty * n, opts));
   const sellCurve = priceCurve(output, 'sell', recipe.output.qty * n, opts);
-  const sellChoices = sellOptions(output, recipe.output.qty * n, opts).points;
+  let sellChoices = sellOptions(output, recipe.output.qty * n, opts).points;
+  // If the sell-price AI is available, let it pick the sell price instead.
+  const ai = opts.sellAdvisor ? opts.sellAdvisor(output, recipe.output.qty * n, opts.sellWithinHours * 3600) : null;
+  if (ai && Number.isFinite(ai.median)) sellChoices = [{ price: ai.price, median: ai.median, p90: ai.p90 }];
   const empty = [...buyCurves.map((c, i) => [c, inputs[i].item.name]), [sellCurve, output.name]]
     .filter(([c]) => c.points.length === 0).map(([, name]) => name);
   if (empty.length) return { ...base, status: 'nodata', batch: n, missing: empty };
@@ -145,6 +148,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
     status: 'ok',
     batch: n,
     viable: withinWait && best.profit > 0,
+    ai: ai && Number.isFinite(ai.median) ? { price: ai.price, pFill: ai.pFill, undercut: ai.undercut, neighbours: ai.neighbours } : null,
     plan: best,
     instant,
     flags,

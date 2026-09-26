@@ -7,6 +7,7 @@ const { PriceStore } = require('./prices');
 const { evaluateRecipe, DEFAULTS } = require('./optimizer');
 const { PositionStore, stats } = require('./positions');
 const { rankCrafts, advise } = require('./copilot');
+const { SellAI } = require('./ai');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -26,6 +27,61 @@ const USER_AGENT = process.env.OSRS_USER_AGENT ||
 const fetchImpl = MOCK ? require('./mock').createMockFetch(() => loadRecipes().recipes) : globalThis.fetch;
 const store = new PriceStore({ userAgent: USER_AGENT, fetchImpl });
 const positions = new PositionStore(POSITIONS_FILE);
+const sellAI = new SellAI();
+
+// ---- sell-price AI plumbing ----
+// Windows are snapped to a few sizes so the AI's training sets can be reused.
+const AI_WINDOWS = [0.5, 1, 2, 4, 6, 12, 24, 48].map((h) => h * 3600);
+const snapWindow = (sec) => AI_WINDOWS.find((w) => w >= sec) || AI_WINDOWS[AI_WINDOWS.length - 1];
+const aiWindowsInUse = new Set([2 * 3600]);
+const backtests = new Map(); // windowSec -> result
+
+let aiItemsCache = { version: -1, items: [] };
+function aiItems() {
+  if (aiItemsCache.version !== store.version) {
+    const items = trackedIds().map((id) => store.getItem(store.byId.get(id).name)).filter(Boolean);
+    aiItemsCache = { version: store.version, items };
+  }
+  return aiItemsCache.items;
+}
+
+function sellAdvisorFor(settings) {
+  if (!settings.useAI) return null;
+  return (item, qty, windowSec) => {
+    const w = snapWindow(windowSec);
+    aiWindowsInUse.add(w);
+    const bt = backtests.get(w);
+    // Safety switch: if the AI lost to plain undercutting in its latest
+    // backtest, don't use it for this window.
+    if (bt && bt.upliftVsUndercut < 0) return null;
+    try {
+      return sellAI.suggest(aiItems(), store.version, item, qty, w, settings.share);
+    } catch (e) {
+      logError('ai', e);
+      return null;
+    }
+  };
+}
+
+let backtesting = false;
+function runBacktests() {
+  if (backtesting || !state.lastRefresh) return;
+  backtesting = true;
+  const windows = [...aiWindowsInUse];
+  const next = () => {
+    const w = windows.shift();
+    if (w == null) { backtesting = false; resultsCache.clear(); return; }
+    try {
+      const res = sellAI.runBacktest(aiItems(), store.version, w, DEFAULTS.share);
+      if (res) backtests.set(w, res);
+    } catch (e) {
+      logError('ai backtest', e);
+    }
+    setImmediate(next);
+  };
+  setImmediate(next);
+}
+setInterval(runBacktests, 10 * 60_000);
 
 const state = {
   startedAt: Date.now(),
@@ -116,7 +172,9 @@ async function refresh() {
   }
   state.nextRefresh = Date.now() + REFRESH_MS;
   resultsCache.clear();
-  backfillPending().catch((e) => logError('backfill', e));
+  backfillPending().then(() => {
+    if (!backtests.size) runBacktests();
+  }).catch((e) => logError('backfill', e));
 }
 
 const resultsCache = new Map();
@@ -132,15 +190,17 @@ function parseSettings(q) {
     objective: ['profit', 'activeProfit'].includes(q.get('objective')) ? q.get('objective') : 'profitPerHour',
     maxActive: num(q.get('maxActive'), 15, 0.5, 24 * 60),
     sellWithinHours: num(q.get('sellWithin'), DEFAULTS.sellWithinHours, 0.05, 24 * 7),
+    useAI: q.get('ai') !== '0',
   };
 }
 
 function computeResults(settings) {
   const key = JSON.stringify(settings) + ':' + store.version + ':' + recipesCache.mtime;
   if (resultsCache.has(key)) return resultsCache.get(key);
+  const advisor = sellAdvisorFor(settings);
   const results = loadRecipes().recipes.map((r) => {
     try {
-      return evaluateRecipe(r, (n) => store.getItem(n), settings);
+      return evaluateRecipe(r, (n) => store.getItem(n), { ...settings, sellAdvisor: advisor });
     } catch (e) {
       logError(`recipe ${r.id}`, e);
       return { id: r.id, name: r.output.item, category: r.category, status: 'error', missing: [e.message] };
@@ -152,6 +212,17 @@ function computeResults(settings) {
   return out;
 }
 
+function aiStatus(settings) {
+  const w = snapWindow(settings.sellWithinHours * 3600);
+  const bt = backtests.get(w) || null;
+  return {
+    on: settings.useAI,
+    windowSec: w,
+    backtest: bt,
+    active: settings.useAI && !(bt && bt.upliftVsUndercut < 0),
+  };
+}
+
 function recipeById(id) {
   return loadRecipes().recipes.find((r) => r.id === id) || null;
 }
@@ -161,7 +232,7 @@ function positionsView(settings) {
   return positions.list().map((p) => {
     if (!['buying', 'ready', 'selling'].includes(p.status) || !state.lastRefresh) return p;
     try {
-      return { ...p, advice: advise(p, recipeById(p.recipeId), getItem, settings) };
+      return { ...p, advice: advise(p, recipeById(p.recipeId), getItem, { ...settings, sellAdvisor: sellAdvisorFor(settings) }) };
     } catch (e) {
       logError(`advice ${p.id}`, e);
       return { ...p, advice: { kind: 'info', text: 'Could not compute advice: ' + e.message } };
@@ -228,6 +299,7 @@ const server = http.createServer((req, res) => {
       settings,
       ...(state.lastRefresh ? computeResults(settings) : { results: [], best: [] }),
       positions: positionsView(settings),
+      ai: aiStatus(settings),
       stats: stats(positions.list()),
     };
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

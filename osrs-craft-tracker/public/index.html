@@ -40,6 +40,7 @@
     <label title="Sell prices are picked so the sale finishes within this time even in the slow case, and never above the current market price">Sell within (hours)
       <input id="sellWithin" type="number" min="0.1" step="0.5" value="2">
     </label>
+    <label class="check" title="Let the sell-price AI pick sell prices from similar past charts"><input id="useAI" type="checkbox" checked> Use AI for sell prices</label>
     <label title="Crafts needing more hands-on time than this per batch are hidden">Max hands-on time (min)
       <input id="maxActive" type="number" min="1" step="1" value="15">
     </label>
@@ -58,6 +59,8 @@
       <div class="kpi"><span class="kpi-label">Open trades</span><span id="kpiOpen" class="kpi-value">–</span><span id="kpiOpenSub" class="kpi-sub"></span></div>
       <div class="kpi"><span class="kpi-label">GE tax paid</span><span id="kpiTax" class="kpi-value">–</span><span id="kpiTaxSub" class="kpi-sub"></span></div>
     </section>
+
+    <section id="aiBar" class="ai-bar" hidden></section>
 
     <div class="two-col">
       <section class="card">

@@ -116,6 +116,22 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
       ? opt.points.reduce((b, p) => (profitAt(p.price) / (p.median + craftSec) > profitAt(b.price) / (b.median + craftSec) ? p : b))
       : opt.points[opt.points.length - 1]; // highest price that still sells within the window
     const quick = pts.length ? pts[0] : best;
+    const ai = opts.sellAdvisor ? opts.sellAdvisor(output, pos.sell.qty, opts.sellWithinHours * 3600) : null;
+    if (ai) {
+      const p = pos.sell.qty * ai.expectedNet - cost;
+      const vsUndercut = pos.sell.qty * (ai.expectedNet - ai.undercut.expectedNet);
+      return {
+        kind: 'list', price: ai.price, median: ai.median, breakEven, ai,
+        quick: { price: quick.price, median: quick.median, profit: profitAt(quick.price) },
+        projectedProfit: p,
+        text: `AI price: list ${pos.sell.qty.toLocaleString()} at ${fmt(ai.price)}. ` +
+          `${Math.round(ai.pFill * 100)}% chance it sells within ${dur(ai.windowSec)}` +
+          (Number.isFinite(ai.median) ? ` (typically ~${dur(ai.median)})` : '') +
+          `, based on ${ai.neighbours} similar charts. Expected profit ~${fmt(p)}` +
+          (Math.abs(vsUndercut) >= 1 ? `, ${vsUndercut >= 0 ? '+' : ''}${fmt(vsUndercut)} vs undercutting by 1gp.` : '.') +
+          (ai.price < breakEven ? ` That's under break-even (${fmt(breakEven)}): similar charts mostly fell.` : ''),
+      };
+    }
     const p = profitAt(best.price);
     return {
       kind: 'list', price: best.price, median: best.median, breakEven,
@@ -135,6 +151,22 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
     const remaining = Math.max(MIN_BUDGET, (pos.sell.placedAt + opts.sellWithinHours * 3600 * 1000 - now) / 1000);
     const base = { breakEven, median: cur.median, projectedProfit: profitAt(offer),
       checkInSeconds: Math.round(Math.max(120, Math.min(1800, cur.median / 4))) };
+    const ai = opts.sellAdvisor ? opts.sellAdvisor(output, pos.sell.qty, remaining) : null;
+    if (ai) {
+      base.ai = ai;
+      // Relisting loses your place in the queue, so only move for a real gain.
+      const curNet = aiNetAt(ai, offer);
+      const gain = pos.sell.qty * (ai.expectedNet - curNet);
+      const worth = gain > Math.max(1000, 0.002 * offer * pos.sell.qty);
+      if (worth && ai.price !== offer) {
+        const kind = ai.price < offer ? 'lower' : 'raise';
+        return { ...base, kind, price: ai.price,
+          text: `AI: relist at ${fmt(ai.price)} (${Math.round(ai.pFill * 100)}% chance to sell in the ~${dur(remaining)} left). ` +
+            `Expected ~${fmt(gain)} better than staying at ${fmt(offer)}.` +
+            (profitAt(ai.price) < 0 ? ` Careful: that's under break-even (${fmt(breakEven)}).` : '') };
+      }
+      return { ...base, kind: 'keep', text: `Keep it. The AI doesn't see a better price in the ~${dur(remaining)} left (${Math.round(ai.pFill * 100)}% chance ${fmt(ai.price)} fills).` };
+    }
     const market = sellOptions(output, pos.sell.qty, opts, remaining);
     if (!market.points.length) return { ...base, kind: 'keep', text: 'Not enough trade history to advise' };
     const target = market.points[market.points.length - 1];
@@ -154,6 +186,18 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
     return { ...base, kind: 'keep', text: `Keep it. Likely sells in ~${dur(cur.median)}.` };
   }
   return null;
+}
+
+// Expected net per unit if you stay listed at `price`: the AI's neighbours say
+// how likely that is to fill. Approximated by the undercut/best points.
+function aiNetAt(ai, price) {
+  if (price === ai.price) return ai.expectedNet;
+  if (ai.curve) {
+    let bestPt = ai.curve[0];
+    for (const p of ai.curve) if (Math.abs(p.price - price) < Math.abs(bestPt.price - price)) bestPt = p;
+    return bestPt.ev;
+  }
+  return ai.undercut.expectedNet;
 }
 
 function fmt(n) {

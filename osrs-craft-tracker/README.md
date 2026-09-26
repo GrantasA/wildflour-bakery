@@ -75,14 +75,33 @@ The app treats these as follows:
    - **Total profit**: the most profit per batch that fits in **Max wait**.
 
    Plans longer than **Max wait** are flagged, greyed out and listed after the ones that fit.
-4. **Sell price.** This is the part Flipping Copilot users will recognise. The app never
-   lists above the current market: at most 1gp under the latest insta-buy price, which
-   undercuts the cheapest seller. It also only picks prices that should sell within
-   **Sell within** (default 2 hours) even in the slow case (p90), not just on average. If
-   your listing isn't filling in time, or other sellers undercut you, the Copilot tells you
-   to lower it. If the market rises, it suggests relisting higher. Flipping Copilot's own
-   pricing runs on its private server, so it can't be copied; this follows the same visible
-   behaviour.
+4. **Sell price: the sell-price AI.** This is in `src/ai.js`. It is a pattern-matching
+   ("nearest neighbour") model that runs on your own PC, with no API key and no cost. It
+   works in four steps:
+   1. **Describe the chart.** It turns the item's current chart into numbers: the recent
+      price shape relative to now, volatility, where the price sits in its recent range, the
+      volume trend, the buy/sell spread, and the time of day.
+   2. **Find similar moments.** It searches the history of every tracked item for the 60
+      moments that looked most similar.
+   3. **Replay what happened next.** For each of those moments, it replays the following
+      **Sell within** window (default 2 hours): how high buyers paid, and whether a sale of
+      your size would have filled.
+   4. **Pick the price.** For every candidate price it works out the chance of selling in
+      time, plus what you'd get by dumping at the end if it doesn't sell. It picks the
+      price with the best expected payout after GE tax.
+
+   So it lists above the market when similar charts usually rose, and lower when they
+   usually dipped. While your offer is up, it re-checks every minute and tells you to relist
+   if a different price is clearly better.
+
+   **It grades itself.** Every 10 minutes it backtests: it trains on the older 75% of the
+   history and tests on the newest 25% it hasn't seen. The dashboard shows how it did
+   against simply undercutting by 1gp, and whether its "chance to sell" figures came true.
+   If it loses to undercutting, it switches itself off and the app falls back to
+   undercutting by 1gp. You can also turn it off in Settings.
+
+   The limit: it only sees what the Wiki API provides, which is trade prices and volumes,
+   not the live order book. Treat it as an edge, not a guarantee.
 5. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
    your **Capital** setting.
 

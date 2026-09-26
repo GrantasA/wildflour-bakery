@@ -26,6 +26,14 @@ shields, enchanted bolts, potions and more.
   - **Faster buys when they pay:** buy prices are checked for 5m, 30m, 1h, 4h and longer
     windows, up to your timeframe. The planner takes a quicker, slightly dearer buy whenever
     that gives more gp/h.
+- **"Why not the others?"** Under the picks, the next most profitable unique crafts are
+  listed with the exact reason each one isn't suggested:
+  - too thinly traded for your timeframe
+  - needs more GP than you have free
+  - too risky for your risk setting
+  - price spike
+  - clashes with an open trade
+  - under 50K gp/h
 - **Copilot picks.** The best single crafts right now by gp/h, skipping anything you can't
   afford or that clashes with your open trades. Each shows the exact buy and sell prices to
   offer.

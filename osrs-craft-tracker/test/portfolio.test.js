@@ -52,19 +52,35 @@ test('respects slots, open trades and shared items', () => {
   assert.deepStrictEqual(ids, ['d']); // d (3 slots, 30/h) beats a (2 slots, 10/h) + b-clash
 });
 
-test('never suggests low earners: floor is 50K gp/h or 5% of the best', () => {
+test('never suggests low earners (under 50K gp/h), but one big earner does not hide the rest', () => {
   const big = (id, g) => craft(id, [`${id}1`], 10, g);
   const results = [big('a', 2_000_000), big('b', 90_000), big('c', 60_000), big('d', 629)];
   const p = planSlots({ results, capital: 1000, slots: 8 });
-  // 5% of 2M = 100K, so only 'a' is worth it; 629 gp/h is never suggested
-  assert.deepStrictEqual(p.picks.map((x) => x.id), ['a']);
-  assert.strictEqual(p.minGph, 100_000);
-  assert.match(p.note, /low earners/);
+  assert.deepStrictEqual(p.picks.map((x) => x.id).sort(), ['a', 'b', 'c']);
+  assert.strictEqual(p.minGph, 50_000);
   const lonely = planSlots({ results: [big('d', 629)], capital: 1000, slots: 8 });
   assert.strictEqual(lonely.picks.length, 0);
   assert.match(lonely.note, /low earners/);
   const poor = planSlots({ results: [craft('e', ['E1'], 5000, 900_000, 1)], capital: 100, slots: 8 });
   assert.match(poor.note, /need more GP/);
+});
+
+test('why not: every profitable unique craft that is left out gets a reason', () => {
+  const { whyNot } = require('../src/portfolio');
+  const c = (id, extra) => ({ ...craft(id, [`${id}1`], 10, 100_000), type: 'unique', flags: [], ...extra });
+  const results = [
+    c('ok'),
+    c('thin', { viable: false, flags: ['X only trades ~32/day: not enough to buy even one craft\'s worth in your timeframe'] }),
+    c('poor', { plan: { ...craft('poor', ['P1'], 5e6, 100_000).plan } }),
+    c('risky', { plan: { ...craft('risky', ['R1'], 10, 100_000).plan, riskAdjusted: -5, pLoss: 0.6, badProfit: -1e6 } }),
+    c('proc', { type: 'processing' }),
+  ];
+  const w = whyNot({ results, suggested: new Set(['ok']), busyItems: new Set(), maxActiveMinutes: 15, freeGp: 1000, floor: 50_000 });
+  const by = Object.fromEntries(w.map((x) => [x.id, x.reason]));
+  assert.ok(!('ok' in by) && !('proc' in by));
+  assert.match(by.thin, /only trades ~32\/day/);
+  assert.match(by.poor, /GP per craft/);
+  assert.match(by.risky, /too risky/);
 });
 
 test('an unaffordable craft does not raise the bar for the ones you can afford', () => {

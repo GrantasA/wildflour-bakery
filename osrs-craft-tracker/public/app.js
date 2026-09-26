@@ -283,12 +283,20 @@ function renderSlots() {
   if (sp.picks.length && sp.note) els.slotPicks.insertAdjacentHTML('beforeend', `<p class="muted small">Other slots left free: ${esc(sp.note)}</p>`);
 }
 
+function othersHtml() {
+  const o = data.others || [];
+  if (!o.length) return '';
+  return `<details class="whynot" open><summary>Why not the others? <span class="muted small">(next most profitable unique crafts)</span></summary>
+    <ul>${o.map((x) => `<li><span class="item">${icon(x.icon)}<b>${esc(x.name)}</b></span> <span class="muted small">${gp(x.profit)} profit</span><br>
+      <span class="small">${esc(x.reason)}</span></li>`).join('')}</ul></details>`;
+}
+
 function renderPicks() {
   if (!data.lastRefresh) return;
   const byId = resultsById();
   const picks = data.best.map((id) => byId.get(id)).filter(Boolean);
   if (!picks.length) {
-    els.picks.innerHTML = `<p class="empty">${esc(data.bestNote || 'Nothing worth doing right now.')}</p>`;
+    els.picks.innerHTML = `<p class="empty">${esc(data.bestNote || 'Nothing worth doing right now.')}</p>${othersHtml()}`;
     return;
   }
   const [top, ...rest] = picks;
@@ -325,7 +333,8 @@ function renderPicks() {
         <span class="name">${esc(r.name)}</span>
         <span class="meta"><b class="pos">${gp(gphOf(r))}/h</b><br>${gp(r.plan.profit)} per ${dur(r.plan.seconds)}</span>
         <button class="btn small" data-start="${esc(r.id)}">Start</button>
-      </div>`).join('')}</div>` : ''}`;
+      </div>`).join('')}</div>` : ''}
+    ${othersHtml()}`;
 }
 
 // ---------- positions ----------

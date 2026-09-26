@@ -16,10 +16,11 @@ const { costOf } = require('./positions');
 // A small search picks the combination with the best total gp/h.
 
 const OPEN = new Set(['buying', 'ready', 'selling']);
-// Never suggest a craft earning less than this, or less than 5% of the best one
-// right now: an empty slot beats clicking for pocket change.
+// Never suggest a craft earning less than this: an empty slot beats clicking
+// for pocket change. (No floor relative to the best craft: one outlier
+// estimate would hide everything else.)
 const MIN_GPH = 50_000;
-const MIN_SHARE_OF_BEST = 0.05;
+const MIN_SHARE_OF_BEST = 0;
 const TOP_CANDIDATES = 12;
 const MAX_STEPS = 200_000;
 
@@ -168,4 +169,36 @@ function planSlots({ results, positions = [], capital, slots = 8, maxActiveMinut
   };
 }
 
-module.exports = { planSlots, inUse, eligible, gph, itemsOf, worthwhileFloor, explainEmpty, MIN_GPH };
+// For each profitable unique craft that isn't suggested, the reason why.
+// suggested: Set of recipe ids that are suggested.
+function whyNot({ results, suggested, busyItems, maxActiveMinutes, freeGp, floor, limit = 10 }) {
+  const out = [];
+  const cands = results.filter((r) => r.status === 'ok' && r.type !== 'processing' && r.plan.profit > 0 && !suggested.has(r.id))
+    .sort((a, b) => b.plan.profit / Math.max(a.plan.hours, 1 / 60) - a.plan.profit / Math.max(b.plan.hours, 1 / 60));
+  for (const r of cands) {
+    let reason;
+    const thin = r.flags.find((f) => /only trades/.test(f));
+    const warn = (r.warnings || []).find((w) => w.kind === 'spike' || w.kind === 'crash');
+    const perCraft = r.plan.cost / Math.max(1, r.batch);
+    if (thin) reason = thin.replace(/ in your timeframe$/, '') + ' in your timeframe';
+    else if (r.flags.some((f) => /slower than/.test(f))) reason = `takes ~${hrs(r.plan.hours)}, longer than your timeframe allows`;
+    else if (r.flags.some((f) => /more than the market trades/.test(f))) reason = 'batch bigger than the market trades in your timeframe';
+    else if (warn) reason = `${warn.item}: ${warn.text}`;
+    else if (!(r.plan.riskAdjusted > 0)) reason = `too risky for your risk setting (bad case ${fmtGp(r.plan.badProfit)}, ${Math.round(r.plan.pLoss * 100)}% chance of a loss)`;
+    else if (!r.viable) reason = r.flags[0] || 'not viable right now';
+    else if (r.plan.activeSeconds > maxActiveMinutes * 60) reason = 'needs more than 15 minutes of clicking';
+    else if (itemsOf(r).some((n) => busyItems.has(n))) reason = 'shares an item with one of your open trades';
+    else if (perCraft > freeGp) reason = `needs ~${fmtGp(perCraft)} GP per craft, you have ${fmtGp(freeGp)} free`;
+    else if (gph(r) < floor) reason = `only ${fmtGp(gph(r))} gp/h after risk (under ${fmtGp(floor)})`;
+    else reason = 'ranked below the ones shown';
+    out.push({ id: r.id, name: r.name, icon: r.icon, profit: r.plan.profit, gph: gph(r), reason });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+function hrs(h) {
+  return h < 1 ? `${Math.max(1, Math.round(h * 60))}m` : h < 48 ? `${h.toFixed(1)}h` : `${(h / 24).toFixed(1)}d`;
+}
+
+module.exports = { planSlots, inUse, eligible, gph, itemsOf, worthwhileFloor, explainEmpty, whyNot, MIN_GPH };

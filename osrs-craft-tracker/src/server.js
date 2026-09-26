@@ -11,7 +11,7 @@ const { PriceAI } = require('./ai');
 const { Journal } = require('./journal');
 const { RISK_LEVELS } = require('./risk');
 const { HistoryFiles } = require('./history');
-const { planSlots, inUse, explainEmpty, worthwhileFloor } = require('./portfolio');
+const { planSlots, inUse, explainEmpty, worthwhileFloor, whyNot } = require('./portfolio');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -311,7 +311,10 @@ function slotPlan(settings) {
       return recipe ? evaluateRecipe({ ...recipe, batch }, (n) => store.getItem(n), opts) : null;
     },
   });
-  const out = { plan, best, bestNote };
+  const suggested = new Set([...best, ...plan.picks.map((p) => p.id)]);
+  const others = whyNot({ results, suggested, busyItems: used.items, maxActiveMinutes: settings.maxActive,
+    freeGp, floor: worthwhileFloor(results, undefined, freeGp) });
+  const out = { plan, best, bestNote, others };
   slotCache.clear();
   slotCache.set(key, out);
   return out;
@@ -420,7 +423,7 @@ const server = http.createServer((req, res) => {
       errors: state.errors.slice(0, 5),
       settings,
       ...(state.lastRefresh ? computeResults(settings) : { results: [] }),
-      ...(state.lastRefresh ? (({ plan, best, bestNote }) => ({ slotPlan: plan, best, bestNote }))(slotPlan(settings)) : { slotPlan: null, best: [] }),
+      ...(state.lastRefresh ? (({ plan, best, bestNote, others }) => ({ slotPlan: plan, best, bestNote, others }))(slotPlan(settings)) : { slotPlan: null, best: [], others: [] }),
       positions: positionsView(settings),
       ai: aiStatus(settings),
       stats: stats(positions.list()),

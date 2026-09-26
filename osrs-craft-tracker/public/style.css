@@ -294,3 +294,9 @@ table.cal td, table.cal th { padding: 3px 10px; }
 .gph-badge { margin-left: auto; text-align: center; background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 4px 10px; font-weight: 800; font-size: 17px; line-height: 1.1; }
 .gph-badge small { display: block; font-size: 10px; font-weight: 600; opacity: .8; }
 @media (max-width: 560px) { .toolbar-note { margin-left: 0; } }
+
+.whynot { margin-top: 14px; font-size: 13px; }
+.whynot summary { cursor: pointer; font-weight: 600; }
+.whynot ul { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.whynot li { padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.whynot li .small { color: var(--text-2); }

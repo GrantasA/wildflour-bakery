@@ -104,7 +104,8 @@ test('active time excludes GE waiting; activeProfit objective takes the patient 
   const recipe = { id: 'p', category: 'Test', inputs: [{ item: 'A', qty: 1 }], output: { item: 'Out', qty: 1 }, batch: 20, craftSeconds: 2 };
   const fast = evaluateRecipe(recipe, (n) => items[n], { share: 0.5, maxWaitHours: 24, capital: 1e9, objective: 'profitPerHour' });
   const patient = evaluateRecipe(recipe, (n) => items[n], { share: 0.5, maxWaitHours: 24, capital: 1e9, objective: 'activeProfit' });
-  assert.strictEqual(patient.plan.activeSeconds, 20 * 2 + 15 * 2);
+  // 20 crafts: 2 bank trips (14 per inventory) x 15s + 20 x 2s of crafting, plus 2 GE offers x 15s
+  assert.strictEqual(patient.plan.activeSeconds, 2 * 15 + 20 * 2 + 15 * 2);
   assert.ok(patient.plan.seconds > patient.plan.activeSeconds);
   assert.ok(patient.plan.profit >= fast.plan.profit);
   assert.ok(patient.plan.profitPerActiveHour >= fast.plan.profitPerActiveHour);
@@ -125,7 +126,7 @@ test('batch size is chosen for gp/h, within buy limits and the clicking limit', 
   assert.ok(r.batch <= 72, `chose ${r.batch}`);
   assert.ok(g(chosen) >= g(atMax));
   assert.ok(r.batchOptions.every((o) => g(o) <= g(chosen) + 1e-9));
-  // clicking limit: 1 minute of work, 15s per offer x2 offers, 10s per craft -> at most 3 crafts
+  // clicking limit: 1 minute of work, 15s per offer x2 offers, 15s bank trip, 10s per craft -> 1 craft
   const r2 = evaluateRecipe({ ...recipe, craftSeconds: 10 }, (n) => items[n], { ...opts, maxActive: 1 });
   assert.ok(r2.batch <= 3 && r2.maxBatch <= 3, `batch ${r2.batch} max ${r2.maxBatch}`);
 });
@@ -156,4 +157,18 @@ test('never plans more than the market trades: 280 of a 32/day item in 30 minute
   assert.ok(forced.flags.some((f) => /more than the market trades/.test(f)), forced.flags.join(' | '));
   // and the plan shows the daily volume next to the ingredient
   assert.ok(Math.abs(r.plan.inputs[0].perDay - 32) < 1);
+});
+
+test('hands-on time counts steps, bank trips and travel to the station', () => {
+  const { craftTime, maxCraftsWithin } = require('../src/effort');
+  const ward = { steps: [['anvil', 1]], perInventory: 9, station: 'anvil' };
+  // 100 wards: walk to the anvil and back (60s) + 12 bank trips (15s) + 100 x 3s smithing
+  assert.strictEqual(craftTime(ward, 100), 60 + 12 * 15 + 100 * 3);
+  const anguish = { steps: [['combine', 1], ['chisel', 1], ['furnace', 1], ['enchant', 1]], perInventory: 7, station: 'furnace' };
+  // a 4-step chain costs 4 steps per craft, not 1
+  assert.ok(Math.abs(craftTime(anguish, 7) - (60 + 15 + 7 * (1.8 + 1.2 + 3 + 1.8))) < 1e-9);
+  assert.strictEqual(craftTime(ward, 0), 0);
+  assert.strictEqual(maxCraftsWithin(ward, 60 + 15 + 3 - 1), 0);
+  const m = maxCraftsWithin(ward, 600);
+  assert.ok(craftTime(ward, m) <= 600 && craftTime(ward, m + 1) > 600);
 });

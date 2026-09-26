@@ -34,6 +34,17 @@ shields, enchanted bolts, potions and more.
   - price spike
   - clashes with an open trade
   - under 50K gp/h
+- **Realistic hands-on time.** Each recipe lists its real steps per craft, for example
+  "combine → chisel → furnace → enchant" for zenyte jewellery from raw materials. It also
+  lists how many crafts fit in one inventory and where you have to go (anvil, furnace,
+  altar, Karuulm). Your time is:
+  - walking there and back once per batch
+  - one bank trip per inventory
+  - every step of every craft
+  - 15 seconds per GE offer
+
+  Each craft's details show the breakdown. Step timings live in `src/effort.js`, and the
+  per-recipe values are in `recipes.json`.
 - **Copilot picks.** The best single crafts right now by gp/h, skipping anything you can't
   afford or that clashes with your open trades. Each shows the exact buy and sell prices to
   offer.
@@ -215,7 +226,8 @@ Edit `src/recipes.json`. The server picks up changes on the next refresh.
 { "id": "my-craft", "category": "Smithing", "skills": "80 Smithing",
   "inputs": [{ "item": "Godsword shard 1", "qty": 1 }],
   "output": { "item": "Godsword blade", "qty": 1 },
-  "coins": 0, "craftSeconds": 3, "batch": 5 }
+  "steps": [["anvil", 1]], "perInventory": 9, "station": "anvil",
+  "coins": 0, "batch": 5 }
 ```
 
 - Item names must match the Wiki's item names, ignoring case. Unknown names appear in the table

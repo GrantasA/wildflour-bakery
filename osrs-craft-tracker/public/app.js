@@ -314,7 +314,7 @@ function renderPicks() {
       <div class="stats">
         <div class="stat"><b class="pos">${gp(p.profit)}</b><span>profit (batch of ${top.batch})</span></div>
         <div class="stat"><b>${dur(p.seconds)}</b><span>whole cycle</span></div>
-        <div class="stat"><b>${dur(p.activeSeconds)}</b><span>your time</span></div>
+        <div class="stat" title="${esc(effortText(p))}"><b>${dur(p.activeSeconds)}</b><span>your time</span></div>
         <div class="stat"><b>${pct(p.roi)}</b><span>return</span></div>
         <div class="stat"><b class="${cls(p.badProfit)}">${gp(p.badProfit)}</b><span>bad case (worst 10%)</span></div>
         <div class="stat"><b>${Math.round(p.pLoss * 100)}%</b><span>chance of a loss</span></div>
@@ -512,6 +512,20 @@ function ladderHtml(title, curve, side, chosen, qty) {
     </tbody></table></div>`;
 }
 
+// "Your time ~8m: walk to anvil and back 1m · 12 bank trips 3m · 100 x anvil (3s) 5m · 4 GE offers 1m"
+function effortText(p) {
+  const e = p.effort;
+  if (!e) return '';
+  const secs = (x) => (x < 60 ? `${Math.round(x)}s` : dur(x));
+  const steps = (e.steps || []).map(([k, c = 1]) => (c === 1 ? k : `${c}× ${k}`)).join(' + ');
+  const parts = [];
+  if (e.travel) parts.push(`walk to the ${e.station} and back ${secs(e.travel)}`);
+  parts.push(`${e.bankTrips} bank trip${e.bankTrips === 1 ? '' : 's'} ${secs(e.bankSeconds)}`);
+  parts.push(`${e.crafts} × ${steps || 'craft'} (${e.perCraft.toFixed(1)}s each) ${secs(e.crafts * e.perCraft)}`);
+  parts.push(`${e.offers} GE offers ${secs(e.offerSeconds)}`);
+  return `Your time ~${dur(p.activeSeconds)}: ${parts.join(' · ')}`;
+}
+
 function detailHtml(r) {
   const p = r.plan, s = p.sell, i = r.instant;
   return `<tr class="detail"><td colspan="11"><div class="detail">
@@ -520,6 +534,7 @@ function detailHtml(r) {
       `${o.batch === r.batch ? '<b>' : ''}${o.batch} → ${gp(o.gph)}/h${o.batch === r.batch ? '</b>' : ''}`).join(' · ')}</p>` : ''}
     ${r.volume && r.volume.length ? `<p class="muted">Market check (how much trades vs what this batch needs in your timeframe): ${r.volume.map((l) =>
       `${esc(l.name)} ~${Math.round(l.perDay).toLocaleString()}/day → you can expect ~${l.canGet >= 10 ? Math.round(l.canGet).toLocaleString() : l.canGet.toFixed(1)} in time`).join(' · ')}</p>` : ''}
+    <p class="muted">${esc(effortText(r.plan))}</p>
     <p>Batch of ${r.batch}: cost ${gpExact(p.cost)} · revenue ${gpExact(p.revenue)} · tax ${gpExact(p.taxTotal)} ·
       <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> · buy ~${dur(p.buySeconds)}, craft ${dur(p.craftSeconds)}, sell ~${dur(s.median)}</p>
     <p class="muted">At the last traded prices (buy at the last price buyers paid, sell at the last price sellers took; these are recent trades, not guaranteed instant fills): ${gpSigned(i.profit)}, likely ~${dur(i.seconds)}</p>

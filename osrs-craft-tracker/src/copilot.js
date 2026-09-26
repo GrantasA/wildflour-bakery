@@ -2,6 +2,7 @@
 
 const { priceCurve, fillAt, sellOptions } = require('./market');
 const { DEFAULTS, evaluateRecipe } = require('./optimizer');
+const { craftTime } = require('./effort');
 const { taxPerItem } = require('./tax');
 const { costOf, breakEvenPrice } = require('./positions');
 const { eligible, gph, worthwhileFloor } = require('./portfolio');
@@ -146,7 +147,7 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
 
   if (pos.status === 'ready') {
     if (!opt.points.length) return { kind: 'info', text: 'Not enough trade history to suggest a price', breakEven };
-    const craftSec = (recipe.craftSeconds || 3) * pos.batch;
+    const craftSec = craftTime(recipe, pos.batch);
     const best = opts.objective === 'profitPerHour'
       ? opt.points.reduce((b, p) => (profitAt(p.price) / (p.median + craftSec) > profitAt(b.price) / (b.median + craftSec) ? p : b))
       : opt.points[opt.points.length - 1]; // highest price that still sells within the window

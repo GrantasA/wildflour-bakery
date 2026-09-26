@@ -2,6 +2,7 @@
 
 const { priceCurve, fillAt, sellOptions, buyLimitSeconds, dailyVolume } = require('./market');
 const { priceMoveRisk, warnings } = require('./risk');
+const { craftTime, maxCraftsWithin, breakdown } = require('./effort');
 const { taxPerItem } = require('./tax');
 
 const DEFAULTS = {
@@ -35,11 +36,11 @@ function batchSize(recipe, inputs, capital, maxActiveMinutes = Infinity) {
   const unitCost = inputs.reduce((a, i) => a + i.qty * (i.item.latest.high || i.item.latest.low || 0), 0)
     + (recipe.coins || 0);
   if (unitCost > 0) n = Math.min(n, Math.floor(capital / unitCost));
-  // "least work": no more crafts than fit in your clicking limit
+  // "least work": no more crafts than fit in your clicking limit (bank trips,
+  // walking to the station and every crafting step included)
   if (Number.isFinite(maxActiveMinutes)) {
-    const perCraft = recipe.craftSeconds || 3;
     const budget = maxActiveMinutes * 60 - OFFER_SECONDS * (inputs.length + 1);
-    n = Math.min(n, Math.floor(budget / perCraft));
+    n = Math.min(n, maxCraftsWithin(recipe, budget));
   }
   return Math.max(1, n);
 }
@@ -80,7 +81,7 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
   const tf = opts.timeFactor || 1;
   const buySeconds = Math.max(...buys.map((b) => b.median)) * tf;
   const sellSeconds = sell.median * tf;
-  const craftSeconds = (recipe.craftSeconds || 3) * n;
+  const craftSeconds = craftTime(recipe, n);
   const seconds = buySeconds + craftSeconds + sellSeconds;
   // Time you actually spend at the keyboard: placing/collecting offers and
   // crafting. GE waiting is passive, so it doesn't count here.
@@ -114,6 +115,7 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
     hours: seconds / 3600,
     profitPerHour: profit / (seconds / 3600),
     craftSeconds, activeSeconds,
+    effort: { ...breakdown(recipe, n), offers: inputs.length + 1, offerSeconds: OFFER_SECONDS * (inputs.length + 1) },
     profitPerActiveHour: profit / (activeSeconds / 3600),
     roi: cost > 0 ? profit / cost : 0,
     badProfit, pLoss, riskAdjusted,
@@ -160,6 +162,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const opts = { ...DEFAULTS, ...settings };
   if (recipe.batch) return evaluateAtBatch(recipe, getItem, opts);
   const first = evaluateAtBatch(recipe, getItem, opts); // at the maximum batch
+  if (first.status === 'ok') first.maxBatch = first.batch;
   if (first.status !== 'ok' || first.batch <= 1) return first;
   const nMax = first.batch;
   const tried = new Map([[nMax, first]]);

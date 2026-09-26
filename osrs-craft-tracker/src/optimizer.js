@@ -14,7 +14,7 @@ const DEFAULTS = {
 };
 
 // Buy windows the price AI is asked about when building an input's options.
-const AI_BUY_WINDOWS = [1, 4, 12, 24, 48].map((h) => h * 3600);
+const AI_BUY_WINDOWS = [5 / 60, 0.5, 1, 4, 8, 12, 24, 48].map((h) => Math.round(h * 3600));
 
 // Hands-on time to place and collect one GE offer.
 const OFFER_SECONDS = 15;
@@ -98,7 +98,8 @@ function score(plan, objective) {
 // (No separate "pay the ask now" option: the AI's shortest window already
 // covers quick buys, priced with its own view of how likely they are to fill.)
 function aiBuyCurve(advisor, item, qty, maxSec, opts) {
-  const windows = AI_BUY_WINDOWS.filter((w) => w <= Math.max(maxSec, AI_BUY_WINDOWS[0]));
+  // every standard window up to your timeframe, plus the timeframe itself
+  const windows = [...new Set([...AI_BUY_WINDOWS.filter((w) => w < maxSec), Math.max(maxSec, AI_BUY_WINDOWS[0])])];
   const limitSec = buyLimitSeconds(qty, item.limit);
   const pts = [];
   for (const w of windows) {
@@ -141,7 +142,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const n = batchSize(recipe, inputs, opts.capital);
   // Let the price AI pick buy prices where it can; otherwise use the fill-time model.
   const buyCurves = inputs.map((inp) => (opts.buyAdvisor
-    ? aiBuyCurve(opts.buyAdvisor, inp.item, inp.qty * n, opts.maxWaitHours * 3600, opts) : null)
+    ? aiBuyCurve(opts.buyAdvisor, inp.item, inp.qty * n, (opts.buyWithinHours ?? opts.maxWaitHours) * 3600, opts) : null)
     || priceCurve(inp.item, 'buy', inp.qty * n, opts));
   const sellCurve = priceCurve(output, 'sell', recipe.output.qty * n, opts);
   // If the sell-price AI is available, let it pick the sell price; otherwise

@@ -22,44 +22,33 @@
     </div>
     <div class="top-actions">
       <span id="live" class="pill live"><span class="dot"></span><span id="liveText">Connecting…</span></span>
-      <button id="settingsBtn" class="btn ghost" aria-expanded="false" aria-controls="settings">⚙ Settings</button>
     </div>
   </header>
 
-  <section id="settings" class="settings" hidden>
-    <label>Optimise for
-      <select id="objective">
-        <option value="activeProfit">Profit for my time (slow buys, quick crafts)</option>
-        <option value="profitPerHour">Profit per hour (fast flips)</option>
-        <option value="profit">Biggest profit per batch</option>
-      </select>
+  <section class="toolbar" aria-label="Settings">
+    <div class="seg-group">
+      <span class="seg-label" title="How much the bad case counts. Low: avoid bad outcomes. High: chase the average.">Risk</span>
+      <div class="seg" id="riskSeg" role="radiogroup" aria-label="Risk">
+        <button type="button" role="radio" data-risk="low">Low</button>
+        <button type="button" role="radio" data-risk="mid">Mid</button>
+        <button type="button" role="radio" data-risk="high">High</button>
+      </div>
+    </div>
+    <div class="seg-group">
+      <span class="seg-label" title="How long each buy or sell offer may take to fill">Timeframe</span>
+      <div class="seg" id="tfSeg" role="radiogroup" aria-label="Timeframe">
+        <button type="button" role="radio" data-tf="5">5m</button>
+        <button type="button" role="radio" data-tf="30">30m</button>
+        <button type="button" role="radio" data-tf="240">4h</button>
+        <button type="button" role="radio" data-tf="480">8h</button>
+        <button type="button" role="radio" data-tf="custom">Custom</button>
+      </div>
+      <input id="tfCustom" class="tf-custom" type="text" placeholder="e.g. 90m, 2h, 1d" aria-label="Custom timeframe" hidden>
+    </div>
+    <label class="gp-field" title="The GP you have for crafting. The planner spreads it across crafts for the best gp/h.">Your GP
+      <input id="capital" type="text" value="100m" inputmode="decimal">
     </label>
-    <label title="How much the bad case counts when picking crafts and prices">Risk
-      <select id="risk">
-        <option value="careful">Careful: avoid bad outcomes</option>
-        <option value="balanced" selected>Balanced</option>
-        <option value="bold">Bold: chase the average</option>
-      </select>
-    </label>
-    <label title="Longest a whole cycle (buy + craft + sell) may take">Max GE wait (hours)
-      <input id="maxWait" type="number" min="0.1" step="1" value="24">
-    </label>
-    <label title="Sell prices are picked so the sale finishes within this time even in the slow case, and never above the current market price">Sell within (hours)
-      <input id="sellWithin" type="number" min="0.1" step="0.5" value="2">
-    </label>
-    <label class="check" title="Let the sell-price AI pick sell prices from similar past charts"><input id="useAI" type="checkbox" checked> Use AI for sell prices</label>
-    <label title="Crafts needing more hands-on time than this per batch are hidden">Max hands-on time (min)
-      <input id="maxActive" type="number" min="1" step="1" value="15">
-    </label>
-    <label title="How many of your 8 GE slots this app may plan with">GE slots
-      <input id="slots" type="number" min="1" max="8" step="1" value="8">
-    </label>
-    <label title="Total cash you're willing to tie up across all your crafts">Capital (total)
-      <input id="capital" type="text" value="100m">
-    </label>
-    <label title="Share of matching market volume your offer captures. Lower = more conservative wait estimates.">Market share
-      <input id="share" type="number" min="0.05" max="1" step="0.05" value="0.5">
-    </label>
+    <span class="muted small toolbar-note">Everything else is tuned for the best gp/h with the least clicking.</span>
   </section>
 
   <main>
@@ -74,7 +63,7 @@
 
     <section class="card" id="slotsCard" hidden>
       <div class="card-head">
-        <h2>Fill your GE slots</h2>
+        <h2>Do this now: fill your GE slots</h2>
         <span id="slotSummary" class="muted small"></span>
       </div>
       <div id="slotBar" class="slot-bar" role="img"></div>
@@ -113,14 +102,13 @@
           <thead>
             <tr>
               <th data-sort="name">Craft</th>
-              <th data-sort="score" class="num" title="Blend of profit, profit for your time, ROI, speed and fill reliability (0-100)">Score</th>
+              <th data-sort="gph" class="num" title="Risk-adjusted profit per hour of the whole cycle (buy + craft + sell)">GP / hour</th>
               <th data-sort="cost" class="num">Buy cost</th>
               <th data-sort="sell" class="num">Sell each</th>
               <th data-sort="profit" class="num" title="After 2% GE tax">Profit</th>
               <th data-sort="roi" class="num">ROI</th>
-              <th data-sort="hours" class="num" title="Median time for the whole cycle, mostly GE waiting">GE wait</th>
+              <th data-sort="hours" class="num" title="Expected time for the whole cycle, mostly GE waiting">Cycle</th>
               <th data-sort="activeSeconds" class="num" title="Your hands-on time: crafting + placing offers">Your time</th>
-              <th data-sort="profitPerActiveHour" class="num" title="Profit per hour of your hands-on time">Profit / your hr</th>
               <th data-sort="badProfit" class="num" title="Profit in the worst 10% of cases, if prices move against you while you buy, craft and sell">Bad case</th>
               <th data-sort="pLoss" class="num" title="Chance the batch ends in a loss (sorted safest first)">Loss risk</th>
               <th></th>

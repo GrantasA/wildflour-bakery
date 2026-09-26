@@ -11,7 +11,7 @@ const { PriceAI } = require('./ai');
 const { Journal } = require('./journal');
 const { RISK_LEVELS } = require('./risk');
 const { HistoryFiles } = require('./history');
-const { planSlots } = require('./portfolio');
+const { planSlots, inUse } = require('./portfolio');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -49,7 +49,7 @@ const journal = new Journal(DATA_DIR, MOCK ? '-mock' : '');
 
 // ---- price AI plumbing ----
 // Windows are snapped to a few sizes so the AI's training sets can be reused.
-const AI_WINDOWS = [0.5, 1, 2, 4, 8, 12, 24, 48].map((h) => h * 3600);
+const AI_WINDOWS = [5 / 60, 0.5, 1, 2, 4, 8, 12, 24, 48, 72].map((h) => Math.round(h * 3600));
 const snapWindow = (sec) => AI_WINDOWS.find((w) => w >= sec) || AI_WINDOWS[AI_WINDOWS.length - 1];
 const aiWindowsInUse = { sell: new Set([2 * 3600]), buy: new Set([4 * 3600]) };
 const backtests = { sell: new Map(), buy: new Map() }; // side -> windowSec -> result
@@ -228,22 +228,28 @@ async function refresh() {
 
 const resultsCache = new Map();
 let lastSettings = null; // warm the cache for these right after each refresh
+// The only choices: risk (low / mid / high), timeframe (how long each buy or
+// sell offer may take) and your GP. Everything else is tuned for the best gp/h.
 function parseSettings(q) {
   const num = (v, d, lo, hi) => {
     const n = Number(v);
     return Number.isFinite(n) && v !== '' && v != null ? Math.min(hi, Math.max(lo, n)) : d;
   };
+  const tf = num(q.get('timeframe'), 240, 5, 72 * 60); // minutes
+  const risk = ['low', 'mid', 'high'].includes(q.get('risk')) ? q.get('risk') : 'mid';
   return {
-    share: num(q.get('share'), DEFAULTS.share, 0.01, 1),
-    maxWaitHours: num(q.get('maxWait'), DEFAULTS.maxWaitHours, 0.05, 24 * 14),
+    timeframeMin: tf,
+    buyWithinHours: tf / 60,
+    sellWithinHours: tf / 60,
+    maxWaitHours: (2 * tf) / 60 + 0.25, // buy + sell + a bit for crafting
     capital: num(q.get('capital'), DEFAULTS.capital, 1000, 1e11),
-    objective: ['profit', 'activeProfit'].includes(q.get('objective')) ? q.get('objective') : 'profitPerHour',
-    maxActive: num(q.get('maxActive'), 15, 0.5, 24 * 60),
-    slots: Math.round(num(q.get('slots'), 8, 1, 8)),
-    sellWithinHours: num(q.get('sellWithin'), DEFAULTS.sellWithinHours, 0.05, 24 * 7),
+    objective: 'profitPerHour',
+    risk,
+    riskAversion: RISK_LEVELS[risk],
+    share: num(q.get('share'), DEFAULTS.share, 0.01, 1),
+    maxActive: 15, // "least work": no craft needing more than 15 min of clicking per batch
+    slots: 8,
     useAI: q.get('ai') !== '0',
-    risk: RISK_LEVELS[q.get('risk')] != null ? q.get('risk') : 'balanced',
-    riskAversion: RISK_LEVELS[q.get('risk')] ?? RISK_LEVELS.balanced,
   };
 }
 
@@ -261,8 +267,7 @@ function computeResults(settings) {
       return { id: r.id, name: r.output.item, category: r.category, status: 'error', missing: [e.message] };
     }
   });
-  const ranked = rankCrafts(results, settings.maxActive);
-  const out = { results, best: ranked.slice(0, 5).map((r) => r.id) };
+  const out = { results };
   resultsCache.set(key, out);
   return out;
 }
@@ -289,6 +294,10 @@ function slotPlan(settings) {
   const key = JSON.stringify(settings) + ':' + store.version + ':' + recipesCache.mtime + ':' + positionsRev;
   if (slotCache.has(key)) return slotCache.get(key);
   const { results } = computeResults(settings);
+  // best single crafts to start, skipping anything that clashes with open trades
+  const used = inUse(positions.list());
+  const best = rankCrafts(results, settings.maxActive, used.items, Math.max(0, settings.capital - used.cash))
+    .slice(0, 5).map((r) => r.id);
   const opts = { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') };
   const plan = planSlots({
     results, positions: positions.list(), capital: settings.capital, slots: settings.slots,
@@ -298,9 +307,10 @@ function slotPlan(settings) {
       return recipe ? evaluateRecipe({ ...recipe, batch }, (n) => store.getItem(n), opts) : null;
     },
   });
+  const out = { plan, best };
   slotCache.clear();
-  slotCache.set(key, plan);
-  return plan;
+  slotCache.set(key, out);
+  return out;
 }
 
 function recipeById(id) {
@@ -371,6 +381,17 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  // The exact plan for one craft at a chosen batch size (used by the start dialog,
+  // so its suggested prices match what the trade advice will say).
+  if (url.pathname === '/api/plan') {
+    const settings = parseSettings(url.searchParams);
+    const recipe = recipeById(url.searchParams.get('recipeId'));
+    if (!recipe || !state.lastRefresh) return sendJson(res, 404, { error: 'Unknown craft' });
+    const batch = Math.max(1, Math.min(1_000_000, Math.round(Number(url.searchParams.get('batch'))) || 0)) || undefined;
+    const r = evaluateRecipe(batch ? { ...recipe, batch } : recipe, (n) => store.getItem(n),
+      { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') });
+    return sendJson(res, 200, r.status === 'ok' ? { batch: r.batch, plan: r.plan, gph: r.plan.riskAdjusted / Math.max(r.plan.hours, 1 / 60) } : { error: 'No price data yet' });
+  }
   if (url.pathname === '/api/state') {
     const settings = parseSettings(url.searchParams);
     const body = {
@@ -381,8 +402,8 @@ const server = http.createServer((req, res) => {
       backfill: state.backfill,
       errors: state.errors.slice(0, 5),
       settings,
-      ...(state.lastRefresh ? computeResults(settings) : { results: [], best: [] }),
-      slotPlan: state.lastRefresh ? slotPlan(settings) : null,
+      ...(state.lastRefresh ? computeResults(settings) : { results: [] }),
+      ...(state.lastRefresh ? (({ plan, best }) => ({ slotPlan: plan, best }))(slotPlan(settings)) : { slotPlan: null, best: [] }),
       positions: positionsView(settings),
       ai: aiStatus(settings),
       stats: stats(positions.list()),

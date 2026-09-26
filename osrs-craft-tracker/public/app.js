@@ -4,10 +4,10 @@ const $ = (id) => document.getElementById(id);
 const els = {
   rows: $('rows'), picks: $('picks'), positions: $('positions'), history: $('history'), chart: $('chart'),
   live: $('live'), liveText: $('liveText'), mock: $('mock'), hidden: $('hidden'), tooltip: $('tooltip'),
-  settings: $('settings'), settingsBtn: $('settingsBtn'),
-  aiBar: $('aiBar'), useAI: $('useAI'), risk: $('risk'), slots: $('slots'),
+  riskSeg: $('riskSeg'), tfSeg: $('tfSeg'), tfCustom: $('tfCustom'),
+  aiBar: $('aiBar'),
   slotsCard: $('slotsCard'), slotBar: $('slotBar'), slotPicks: $('slotPicks'), slotSummary: $('slotSummary'),
-  objective: $('objective'), sellWithin: $('sellWithin'), maxWait: $('maxWait'), maxActive: $('maxActive'), capital: $('capital'), share: $('share'),
+  capital: $('capital'),
   search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
   dialog: $('startDialog'), form: $('startForm'), startRecipe: $('startRecipe'), startBatch: $('startBatch'),
   startBought: $('startBought'), startInputs: $('startInputs'), startInfo: $('startInfo'), startError: $('startError'),
@@ -15,7 +15,7 @@ const els = {
 };
 
 let data = null;
-let sortKey = 'score';
+let sortKey = 'gph';
 let sortAsc = false;
 const expanded = new Set();
 const drafts = {}; // text typed into trade price boxes, kept across refreshes
@@ -56,33 +56,49 @@ function when(ts) {
 }
 
 // ---------- settings ----------
-const SETTINGS = ['objective', 'risk', 'slots', 'sellWithin', 'maxWait', 'maxActive', 'capital', 'share'];
+// Only three choices; everything else is tuned server-side for the best gp/h.
+const settings = { risk: 'mid', tf: '240', custom: '', capital: '100m' };
+
+// "90", "90m", "2h", "1d", "1h30m" -> minutes
+function parseDuration(text) {
+  const t = String(text).trim().toLowerCase();
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  let total = 0, any = false;
+  for (const [, n, u] of t.matchAll(/(\d+(?:\.\d+)?)\s*(d|h|m)/g)) {
+    total += Number(n) * { d: 1440, h: 60, m: 1 }[u];
+    any = true;
+  }
+  return any ? total : null;
+}
+const timeframeMinutes = () => (settings.tf === 'custom' ? parseDuration(settings.custom) || 240 : Number(settings.tf));
+
 function query() {
-  const p = new URLSearchParams({
-    objective: els.objective.value, maxWait: els.maxWait.value, sellWithin: els.sellWithin.value, risk: els.risk.value,
-    slots: els.slots.value,
-    maxActive: els.maxActive.value, share: els.share.value, ai: els.useAI.checked ? '1' : '0',
-  });
-  const cap = parseGp(els.capital.value);
+  const p = new URLSearchParams({ risk: settings.risk, timeframe: String(timeframeMinutes()) });
+  const cap = parseGp(settings.capital);
   if (cap) p.set('capital', cap);
   return p.toString();
 }
 function saveSettings() {
   try {
-    const s = { sortKey, sortAsc };
-    for (const k of SETTINGS) s[k] = els[k].value;
-    s.useAI = els.useAI.checked;
-    localStorage.setItem('craft-copilot-settings', JSON.stringify(s));
+    localStorage.setItem('craft-copilot-settings-v2', JSON.stringify({ ...settings, sortKey, sortAsc }));
   } catch (e) { /* storage unavailable */ }
 }
 function loadSettings() {
   try {
-    const s = JSON.parse(localStorage.getItem('craft-copilot-settings') || 'null');
-    if (!s) return;
-    for (const k of SETTINGS) if (s[k] != null && s[k] !== '') els[k].value = s[k];
-    if (s.useAI != null) els.useAI.checked = s.useAI;
-    if (s.sortKey) { sortKey = s.sortKey; sortAsc = !!s.sortAsc; }
+    const s = JSON.parse(localStorage.getItem('craft-copilot-settings-v2') || 'null');
+    if (s) {
+      for (const k of Object.keys(settings)) if (s[k] != null) settings[k] = s[k];
+      if (s.sortKey) { sortKey = s.sortKey; sortAsc = !!s.sortAsc; }
+    }
   } catch (e) { /* storage unavailable */ }
+  syncSettingsUI();
+}
+function syncSettingsUI() {
+  for (const b of els.riskSeg.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.risk === settings.risk));
+  for (const b of els.tfSeg.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.tf === settings.tf));
+  els.tfCustom.hidden = settings.tf !== 'custom';
+  if (document.activeElement !== els.tfCustom) els.tfCustom.value = settings.custom;
+  if (document.activeElement !== els.capital) els.capital.value = settings.capital;
 }
 
 // ---------- data ----------
@@ -111,8 +127,11 @@ async function post(path, body) {
   return out;
 }
 
+// risk-adjusted gp per hour of the whole buy -> craft -> sell cycle: the one goal
+const gphOf = (r) => (r.status === 'ok' ? r.plan.riskAdjusted / Math.max(r.plan.hours, 1 / 60) : -Infinity);
+
 const resultsById = () => new Map((data?.results || []).map((r) => [r.id, r]));
-const maxActiveSec = () => (parseFloat(els.maxActive.value) || 15) * 60;
+const maxActiveSec = () => 15 * 60; // "least work": at most 15 minutes of clicking per batch
 // Crafts that need more of your own time than the limit are left out everywhere.
 const tooMuchWork = (r) => r.status === 'ok' && r.plan.activeSeconds > maxActiveSec();
 
@@ -245,15 +264,15 @@ function renderSlots() {
   els.slotBar.innerHTML = cells.slice(0, 8).join('');
   els.slotBar.setAttribute('aria-label', `${sp.usedByTrades.slots} slots in use by your trades, ${sp.slotsPlanned} suggested, ${sp.freeSlots - sp.slotsPlanned} free`);
   els.slotSummary.textContent = sp.picks.length
-    ? `Uses ${sp.slotsPlanned} of ${sp.freeSlots} free slots and ${gp(sp.cashPlanned)} of ${gp(sp.freeCash)} free cash · expected ${gpSigned(sp.profit)} (bad case ${gpSigned(sp.badProfit)})`
+    ? `+${gp(sp.gph)} gp/h in total · uses ${sp.slotsPlanned} of ${sp.freeSlots} free slots and ${gp(sp.cashPlanned)} of ${gp(sp.freeCash)} free GP · expected ${gpSigned(sp.profit)} (bad case ${gpSigned(sp.badProfit)})`
     : sp.freeSlots === 0 ? 'All your slots are busy with open trades.'
       : sp.freeCash <= 0 ? 'All your capital is tied up in open trades.'
         : 'Nothing worth doing fits your free slots and cash right now.';
   els.slotPicks.innerHTML = sp.picks.length ? `<div class="table-wrap"><table class="slot-list"><thead><tr>
-      <th>Craft</th><th class="num">Batch</th><th class="num">Slots</th><th class="num">Cash</th><th class="num">Profit</th>
+      <th>Craft</th><th class="num">GP / hour</th><th class="num">Batch</th><th class="num">Slots</th><th class="num">GP needed</th><th class="num">Profit</th>
       <th class="num">Bad case</th><th class="num">Loss risk</th><th class="num">Takes</th><th></th></tr></thead><tbody>
-    ${sp.picks.map((p) => `<tr><td><span class="item">${icon(p.icon)}${esc(p.name)}</span>${p.scaled ? ' <span class="flag">batch cut to fit cash</span>' : ''}</td>
-      <td class="num">${p.batch}</td><td class="num">${p.slots}</td><td class="num">${gp(p.cost)}</td>
+    ${sp.picks.map((p) => `<tr><td><span class="item">${icon(p.icon)}${esc(p.name)}</span>${p.scaled ? ' <span class="flag">smaller batch: more gp/h overall</span>' : ''}</td>
+      <td class="num"><b class="pos">${gp(p.gph)}</b></td><td class="num">${p.batch}</td><td class="num">${p.slots}</td><td class="num">${gp(p.cost)}</td>
       <td class="num ${cls(p.profit)}"><b>${gp(p.profit)}</b></td><td class="num ${cls(p.badProfit)}">${gp(p.badProfit)}</td>
       <td class="num">${Math.round(p.pLoss * 100)}%</td><td class="num">${dur(p.hours * 3600)}</td>
       <td class="num"><button class="btn small primary" data-start="${esc(p.id)}" data-batch="${p.batch}">Start</button></td></tr>`).join('')}
@@ -276,13 +295,13 @@ function renderPicks() {
         ${icon(top.icon, true)}
         <div><div class="rank">Best pick</div><h3>${esc(top.name)}${top.outputQty > 1 ? ` ×${top.outputQty}` : ''}</h3>
           <div class="muted small">${esc(top.category)} · ${esc(top.skills || '')}</div></div>
-        <div class="score" title="All-round score out of 100">${top.score}<small>score</small></div>
+        <div class="gph-badge" title="Risk-adjusted profit per hour of the whole cycle">${gp(gphOf(top))}<small>gp / hour</small></div>
       </div>
       <div class="chips">${top.reasons.map((r) => `<span class="chip">✓ ${esc(r)}</span>`).join('')}
         ${top.flags.map((f) => `<span class="chip warn">${esc(f)}</span>`).join('')}</div>
       <div class="stats">
         <div class="stat"><b class="pos">${gp(p.profit)}</b><span>profit (batch of ${top.batch})</span></div>
-        <div class="stat"><b>${dur(p.seconds)}</b><span>GE wait (median)</span></div>
+        <div class="stat"><b>${dur(p.seconds)}</b><span>whole cycle</span></div>
         <div class="stat"><b>${dur(p.activeSeconds)}</b><span>your time</span></div>
         <div class="stat"><b>${pct(p.roi)}</b><span>return</span></div>
         <div class="stat"><b class="${cls(p.badProfit)}">${gp(p.badProfit)}</b><span>bad case (worst 10%)</span></div>
@@ -300,7 +319,7 @@ function renderPicks() {
       <div class="runner">
         <span class="muted small">#${i + 2}</span>${icon(r.icon)}
         <span class="name">${esc(r.name)}</span>
-        <span class="meta"><b class="pos">${gp(r.plan.profit)}</b> · ${dur(r.plan.seconds)} wait<br>score ${r.score}</span>
+        <span class="meta"><b class="pos">${gp(gphOf(r))}/h</b><br>${gp(r.plan.profit)} per ${dur(r.plan.seconds)}</span>
         <button class="btn small" data-start="${esc(r.id)}">Start</button>
       </div>`).join('')}</div>` : ''}`;
 }
@@ -390,7 +409,7 @@ function sortValue(r) {
   const p = r.plan;
   switch (sortKey) {
     case 'name': return r.name.toLowerCase();
-    case 'score': return r.score ?? -1;
+    case 'gph': return gphOf(r);
     case 'cost': return p.cost;
     case 'sell': return p.sell.price;
     case 'pLoss': return -p.pLoss;
@@ -406,13 +425,13 @@ function renderTable() {
     els.category.value = cur;
   }
   if (!data.lastRefresh) {
-    els.rows.innerHTML = '<tr><td colspan="12" class="empty">Waiting for the first price pull…</td></tr>';
+    els.rows.innerHTML = '<tr><td colspan="11" class="empty">Waiting for the first price pull…</td></tr>';
     return;
   }
   const untradeable = data.results.filter((r) => r.status === 'missing');
   const busy = data.results.filter(tooMuchWork);
   const notes = [];
-  if (busy.length) notes.push(`Hidden ${busy.length} craft(s) needing more than ${els.maxActive.value} min of your time: ${busy.map((r) => r.name).join(', ')}.`);
+  if (busy.length) notes.push(`Hidden ${busy.length} craft(s) needing more than 15 min of clicking per batch: ${busy.map((r) => r.name).join(', ')}.`);
   if (untradeable.length) notes.push(`Hidden ${untradeable.length} craft(s) with items not on the GE: ${untradeable.map((r) => `${r.name} (${r.missing.join(', ')})`).join('; ')}.`);
   els.hidden.textContent = notes.join(' ');
 
@@ -434,18 +453,22 @@ function renderTable() {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('asc', th.dataset.sort === sortKey && sortAsc);
   });
-  els.rows.innerHTML = rows.map(rowHtml).join('') || '<tr><td colspan="12" class="empty">No crafts match.</td></tr>';
+  topGph = Math.max(0, ...rows.map(gphOf).filter(Number.isFinite));
+  els.rows.innerHTML = rows.map(rowHtml).join('') || '<tr><td colspan="11" class="empty">No crafts match.</td></tr>';
 }
 
+let topGph = 1;
 function rowHtml(r) {
   const open = expanded.has(r.id);
   const title = `<span class="item">${icon(r.icon)}<span>${esc(r.name)}${r.outputQty > 1 ? ` ×${r.outputQty}` : ''}<br><span class="cat">${esc(r.category)}</span></span></span>`;
   if (r.status !== 'ok') {
-    return `<tr class="row dim"><td>${title}</td><td colspan="11" class="muted">${esc(r.status === 'nodata' ? 'Loading price history: ' : 'Error: ')}${esc((r.missing || []).join(', '))}</td></tr>`;
+    return `<tr class="row dim"><td>${title}</td><td colspan="10" class="muted">${esc(r.status === 'nodata' ? 'Loading price history: ' : 'Error: ')}${esc((r.missing || []).join(', '))}</td></tr>`;
   }
   const p = r.plan;
   const flags = r.flags.length ? `<div class="flagline">${r.flags.map((f) => `<span class="flag">${esc(f)}</span>`).join('')}</div>` : '';
-  const score = r.score != null ? `<span class="scorebar"><i style="width:${r.score}%"></i></span>${r.score}` : '<span class="muted">–</span>';
+  const g = gphOf(r);
+  const share = Math.max(0, Math.min(100, (100 * g) / Math.max(1, topGph)));
+  const score = `<span class="scorebar"><i style="width:${share}%"></i></span><b class="${cls(g)}">${gp(g)}</b>`;
   return `<tr class="row ${r.viable ? '' : 'dim'}" data-id="${esc(r.id)}">
     <td>${title}${flags}</td>
     <td class="num">${score}</td>
@@ -455,7 +478,6 @@ function rowHtml(r) {
     <td class="num ${cls(p.roi)}">${pct(p.roi)}</td>
     <td class="num">${dur(p.seconds)}</td>
     <td class="num">${dur(p.activeSeconds)}</td>
-    <td class="num ${cls(p.profitPerActiveHour)}">${gp(p.profitPerActiveHour)}</td>
     <td class="num ${cls(p.badProfit)}">${gp(p.badProfit)}</td>
     <td class="num">${Math.round(p.pLoss * 100)}%</td>
     <td class="num"><button class="btn small" data-start="${esc(r.id)}">Start</button></td>
@@ -476,7 +498,7 @@ function ladderHtml(title, curve, side, chosen, qty) {
 
 function detailHtml(r) {
   const p = r.plan, s = p.sell, i = r.instant;
-  return `<tr class="detail"><td colspan="12"><div class="detail">
+  return `<tr class="detail"><td colspan="11"><div class="detail">
     <p class="muted">${esc(r.skills || '')}${r.notes ? ' · ' + esc(r.notes) : ''}${r.coins ? ` · ${gpExact(r.coins)} gp fee per craft` : ''}</p>
     <p>Batch of ${r.batch}: cost ${gpExact(p.cost)} · revenue ${gpExact(p.revenue)} · tax ${gpExact(p.taxTotal)} ·
       <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> · buy ~${dur(p.buySeconds)}, craft ${dur(p.craftSeconds)}, sell ~${dur(s.median)}</p>
@@ -564,33 +586,55 @@ function openStart(recipeId, batch) {
   els.startTitle.textContent = recipeId ? 'Start this craft' : 'Log a trade';
   els.startBought.checked = false;
   els.startError.hidden = true;
+  els.startInputs.innerHTML = '';
   fillStart(true);
   if (batch) { els.startBatch.value = batch; fillStart(false); }
   els.dialog.showModal();
 }
 
-function fillStart(resetBatch) {
+// The dialog shows the exact plan for the batch you're starting (fetched from
+// the server), so its prices match what the trade advice will say. Prices you
+// type yourself are kept; untouched ones are left to the plan.
+let startPlanReq = 0;
+async function fillStart(resetBatch) {
   const r = resultsById().get(els.startRecipe.value);
   if (!r) return;
   if (resetBatch) els.startBatch.value = r.batch;
   const n = parseInt(els.startBatch.value, 10) || r.batch;
   const bought = els.startBought.checked;
-  els.startInputs.innerHTML = r.plan.inputs.map((i, k) => `<label>${icon(i.icon)}<span style="flex:1">${esc(i.name)} ×${Math.round((i.qty / r.batch) * n).toLocaleString()}</span>
-    <input data-k="${k}" inputmode="numeric" value="${i.price}" aria-label="${bought ? 'Price paid' : 'Offer price'} for ${esc(i.name)}"></label>`).join('');
-  els.startInfo.textContent = bought
-    ? 'Enter what you actually paid each. You\'ll get a sell price suggestion next.'
-    : `Suggested offer prices are filled in. Place these buy offers on the GE, then mark each one bought as it fills. Expected profit for ${r.batch}: ${gpSigned(r.plan.profit)}.`;
+  const typed = new Map([...els.startInputs.querySelectorAll('input[data-edited]')].map((i) => [i.dataset.name, i.value]));
+  const render = (plan, note) => {
+    els.startInputs.innerHTML = plan.inputs.map((i, k) => `<label>${icon(i.icon)}<span style="flex:1">${esc(i.name)} ×${i.qty.toLocaleString()}</span>
+      <input data-k="${k}" data-name="${esc(i.name)}" inputmode="numeric" value="${esc(typed.get(i.name) ?? i.price)}"${typed.has(i.name) ? ' data-edited="1"' : ''}
+        aria-label="${bought ? 'Price paid' : 'Offer price'} for ${esc(i.name)}"></label>`).join('');
+    els.startInfo.textContent = bought
+      ? 'Enter what you actually paid each. You\'ll get a sell price suggestion next.'
+      : note;
+  };
+  const req = ++startPlanReq;
+  render({ inputs: r.plan.inputs.map((i) => ({ ...i, qty: Math.round((i.qty / r.batch) * n) })) }, 'Working out prices for this batch…');
   els.startSubmit.textContent = bought ? 'Get sell price' : 'Start tracking';
+  try {
+    const res = await fetch(`/api/plan?${query()}&recipeId=${encodeURIComponent(r.id)}&batch=${n}`);
+    const body = await res.json();
+    if (req !== startPlanReq || !body.plan) return;
+    render(body.plan, `Place these buy offers on the GE, then mark each one bought as it fills. ` +
+      `Batch of ${body.batch}: expected ${gpSigned(body.plan.profit)} over ~${dur(body.plan.seconds)} (${gp(body.gph)} gp/h).`);
+  } catch (e) { /* keep the estimate */ }
 }
 
-els.startRecipe.addEventListener('change', () => fillStart(true));
-els.startBatch.addEventListener('input', () => fillStart(false));
+els.startRecipe.addEventListener('change', () => { els.startInputs.innerHTML = ''; fillStart(true); });
+let batchDebounce;
+els.startBatch.addEventListener('input', () => { clearTimeout(batchDebounce); batchDebounce = setTimeout(() => fillStart(false), 300); });
+els.startInputs.addEventListener('input', (ev) => { if (ev.target.tagName === 'INPUT') ev.target.dataset.edited = '1'; });
 els.startBought.addEventListener('change', () => fillStart(false));
 $('logBtn').addEventListener('click', () => data && openStart());
 $('startCancel').addEventListener('click', () => els.dialog.close());
 els.form.addEventListener('submit', async (ev) => {
   ev.preventDefault();
-  const prices = [...els.startInputs.querySelectorAll('input')].map((i) => parseGp(i.value));
+  // untouched suggestions -> null, so the server uses its plan's prices for this exact batch
+  const bought = els.startBought.checked;
+  const prices = [...els.startInputs.querySelectorAll('input')].map((i) => (bought || i.dataset.edited ? parseGp(i.value) : null));
   try {
     await post('/api/positions', {
       recipeId: els.startRecipe.value, batch: parseInt(els.startBatch.value, 10),
@@ -640,16 +684,21 @@ document.querySelectorAll('#table th[data-sort]').forEach((th) => th.addEventLis
   saveSettings();
   renderTable();
 }));
-els.settingsBtn.addEventListener('click', () => {
-  els.settings.hidden = !els.settings.hidden;
-  els.settingsBtn.setAttribute('aria-expanded', String(!els.settings.hidden));
-});
 let debounce;
-els.useAI.addEventListener('change', () => { saveSettings(); load(); });
-els.risk.addEventListener('change', () => { saveSettings(); load(); });
-for (const k of SETTINGS) {
-  els[k].addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => { saveSettings(); load(); }, 300); });
-}
+const settingsChanged = () => { syncSettingsUI(); saveSettings(); clearTimeout(debounce); debounce = setTimeout(load, 250); };
+els.riskSeg.addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-risk]');
+  if (b) { settings.risk = b.dataset.risk; settingsChanged(); }
+});
+els.tfSeg.addEventListener('click', (ev) => {
+  const b = ev.target.closest('button[data-tf]');
+  if (!b) return;
+  settings.tf = b.dataset.tf;
+  settingsChanged();
+  if (settings.tf === 'custom') els.tfCustom.focus();
+});
+els.tfCustom.addEventListener('input', () => { settings.custom = els.tfCustom.value; if (parseDuration(settings.custom)) settingsChanged(); });
+els.capital.addEventListener('input', () => { settings.capital = els.capital.value; if (parseGp(settings.capital)) settingsChanged(); });
 for (const k of ['search', 'category', 'viableOnly']) els[k].addEventListener('input', () => data && renderTable());
 window.addEventListener('resize', () => data && renderChart(data.stats.series));
 

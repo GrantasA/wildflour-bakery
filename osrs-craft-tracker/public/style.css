@@ -276,3 +276,21 @@ table.cal td, table.cal th { padding: 3px 10px; }
 .slot-list { width: 100%; border-collapse: collapse; }
 .slot-list td { white-space: nowrap; }
 @media (max-width: 560px) { .slot-bar { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* ---------- settings toolbar ---------- */
+.toolbar { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 10px max(16px, calc((100vw - 1320px) / 2));
+  background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.seg-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.seg-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
+.seg button { font: inherit; font-size: 13px; font-weight: 600; border: 0; background: transparent; color: var(--text-2); padding: 6px 12px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tf-custom { width: 130px; }
+.gp-field { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.gp-field input { width: 110px; }
+.toolbar-note { margin-left: auto; }
+.gph-badge { margin-left: auto; text-align: center; background: var(--accent); color: var(--accent-ink); border-radius: 10px; padding: 4px 10px; font-weight: 800; font-size: 17px; line-height: 1.1; }
+.gph-badge small { display: block; font-size: 10px; font-weight: 600; opacity: .8; }
+@media (max-width: 560px) { .toolbar-note { margin-left: 0; } }

@@ -14,7 +14,8 @@
 // The risk comfort setting (careful / balanced / bold) decides how much the bad
 // case counts when plans and prices are chosen.
 
-const RISK_LEVELS = { careful: 1, balanced: 0.4, bold: 0 };
+// low risk = weigh the bad case fully; high risk = chase the average
+const RISK_LEVELS = { low: 1, mid: 0.4, high: 0, careful: 1, balanced: 0.4, bold: 0 };
 const NORMAL_Q10 = -1.2816;
 
 function logMid(buckets) {

@@ -4,9 +4,26 @@ A live dashboard, similar in spirit to the Flipping Copilot RuneLite plugin, but
 instead of flips: oathplate armour, necklace of rupture, godswords, zenyte jewellery, spirit
 shields, enchanted bolts, potions and more.
 
-- **Copilot picks.** The best all-round craft right now, with the exact buy and sell prices to
-  offer. The score blends profit, profit for your time, return, speed, how reliably offers fill,
-  and market liquidity.
+- **One goal: the best gp/h with the least work.** You choose only three things:
+  - **Risk:** Low / Mid / High.
+  - **Timeframe:** how long each buy or sell offer may take. 5m, 30m, 4h, 8h, or a custom
+    value like `90m` or `1d`.
+  - **Your GP.**
+
+  Everything else is tuned automatically for risk-adjusted gp per hour of the whole
+  buy → craft → sell cycle. Crafts needing more than 15 minutes of clicking per batch are
+  left out.
+- **Do this now: fill your GE slots.** The planner picks the combination of crafts that gives
+  the highest total gp/h for your free GE slots and free GP, and it keeps working while you
+  have trades running.
+  - **GP management:** it tries each craft at smaller batch sizes too. A smaller batch buys
+    faster and frees GP for another craft, and sometimes that earns more per hour overall.
+  - **Faster buys when they pay:** buy prices are checked for 5m, 30m, 1h, 4h and longer
+    windows, up to your timeframe. The planner takes a quicker, slightly dearer buy whenever
+    that gives more gp/h.
+- **Copilot picks.** The best single crafts right now by gp/h, skipping anything you can't
+  afford or that clashes with your open trades. Each shows the exact buy and sell prices to
+  offer.
 - **Your trades.** Start a craft and the app tells you, every minute:
   - when to **raise** or **lower** a buy offer, or **cancel** it if the craft stops being
     profitable

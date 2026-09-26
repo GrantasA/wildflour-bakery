@@ -4,6 +4,7 @@ const { priceCurve, fillAt, sellOptions } = require('./market');
 const { DEFAULTS, evaluateRecipe } = require('./optimizer');
 const { taxPerItem } = require('./tax');
 const { costOf, breakEvenPrice } = require('./positions');
+const { eligible, gph } = require('./portfolio');
 
 // ---------- "Best in all aspects" ranking ----------
 
@@ -26,34 +27,36 @@ function worstP90(plan) {
   return Math.max(...plan.inputs.map((i) => i.p90)) + plan.sell.p90;
 }
 
-function rankCrafts(results, maxActiveMinutes) {
-  // Never recommend a craft whose price looks like a spike, crash or manipulation.
-  const pool = results.filter((r) => r.status === 'ok' && r.viable &&
-    r.plan.activeSeconds <= maxActiveMinutes * 60 &&
-    !(r.warnings || []).some((w) => w.kind === 'spike' || w.kind === 'crash'));
+// Best crafts to start right now, by risk-adjusted gp/h (the one goal).
+// Crafts that clash with your open trades, need too much hands-on time or
+// look like a price spike / crash are left out. The other metrics only
+// explain *why* a craft ranks well (the chips in the UI).
+function rankCrafts(results, maxActiveMinutes, busyItems = new Set(), freeGp = Infinity) {
+  // only what you can afford with the GP you have free
+  const pool = eligible(results, busyItems, maxActiveMinutes).filter((r) => r.plan.cost <= freeGp);
   if (!pool.length) return [];
-  const ranks = new Map(pool.map((r) => [r, {}]));
+  const pct = new Map(pool.map((r) => [r, {}]));
   for (const m of METRICS) {
     const vals = pool.map((r) => m.get(r)).sort((a, b) => a - b);
     for (const r of pool) {
       const v = m.get(r);
-      // share of the pool this craft beats (ties count half)
       const below = vals.filter((x) => x < v).length;
       const equal = vals.filter((x) => x === v).length;
-      ranks.get(r)[m.key] = pool.length === 1 ? 1 : (below + (equal - 1) / 2) / (pool.length - 1);
+      pct.get(r)[m.key] = pool.length === 1 ? 1 : (below + (equal - 1) / 2) / (pool.length - 1);
     }
   }
+  const top = Math.max(...pool.map(gph));
   for (const r of pool) {
-    const rk = ranks.get(r);
-    r.score = Math.round(100 * METRICS.reduce((a, m) => a + m.weight * rk[m.key], 0));
-    r.reasons = METRICS.filter((m) => rk[m.key] >= 0.8 && m.key !== 'liquid').map((m) => m.label);
+    r.gph = gph(r);
+    r.score = Math.max(0, Math.round((100 * r.gph) / top)); // % of the best gp/h right now
+    r.reasons = METRICS.filter((m) => pct.get(r)[m.key] >= 0.8 && m.key !== 'liquid').map((m) => m.label);
   }
-  return pool.sort((a, b) => b.score - a.score);
+  return pool.sort((a, b) => b.gph - a.gph);
 }
 
 // ---------- Advice for your open trades ----------
 
-const MIN_BUDGET = 600; // never plan on less than 10 minutes left
+const MIN_BUDGET = 120; // never plan on less than 2 minutes left
 
 function advise(pos, recipe, getItem, settings, now = Date.now()) {
   const opts = { ...DEFAULTS, ...settings };

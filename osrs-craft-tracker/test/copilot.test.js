@@ -116,3 +116,14 @@ test('selling advice: lower when other sellers undercut you', () => {
   assert.strictEqual(a.kind, 'lower');
   assert.ok(a.price <= 2002);
 });
+
+test('picks rank by gp/h and skip what you cannot afford or what clashes with open trades', () => {
+  const mk = (id, item, cost, gph) => ({ id, name: `Out ${id}`, status: 'ok', viable: true, flags: [], warnings: [],
+    ingredients: [{ item, qty: 1 }],
+    plan: { cost, riskAdjusted: gph, profit: gph, profitPerActiveHour: gph, profitPerHour: gph, roi: 0.1, pLoss: 0,
+      seconds: 3600, hours: 1, activeSeconds: 60, buySeconds: 1800, inputs: [{ p90: 1 }], sell: { p90: 1 } } });
+  const res = [mk('a', 'A', 50, 5), mk('b', 'B', 500, 50), mk('c', 'C', 40, 9), mk('d', 'D', 10, 20)];
+  const ranked = rankCrafts(res, 15, new Set(['D']), 100);
+  assert.deepStrictEqual(ranked.map((r) => r.id), ['c', 'a']);
+  assert.strictEqual(ranked[0].score, 100);
+});

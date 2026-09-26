@@ -1,0 +1,14 @@
+{
+  "name": "osrs-craft-tracker",
+  "version": "1.0.0",
+  "description": "Tracks profitable OSRS crafts using live Grand Exchange prices, modelled fill times and GE tax",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "mock": "node src/server.js --mock",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}

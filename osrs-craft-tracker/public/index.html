@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OSRS Craft Profit Tracker</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="title">
+      <h1>OSRS Craft Profit Tracker</h1>
+      <span id="mock" class="badge warn" hidden>MOCK DATA: numbers are fake</span>
+    </div>
+    <div id="status" class="status">Loading…</div>
+  </header>
+
+  <section class="controls">
+    <label>Optimise for
+      <select id="objective">
+        <option value="profitPerHour">Profit per hour</option>
+        <option value="profit">Total profit (within max wait)</option>
+      </select>
+    </label>
+    <label title="Longest total cycle (buy + craft + sell) a plan may take">Max wait (hours)
+      <input id="maxWait" type="number" min="0.1" step="0.5" value="24">
+    </label>
+    <label title="Capital you're willing to tie up per cycle; caps batch size">Capital (gp)
+      <input id="capital" type="text" value="100m">
+    </label>
+    <label title="Fraction of matching market volume your offer captures against other players. Lower = more conservative wait times.">Market share
+      <input id="share" type="number" min="0.05" max="1" step="0.05" value="0.5">
+    </label>
+    <label>Search
+      <input id="search" type="search" placeholder="item or input…">
+    </label>
+    <label>Category
+      <select id="category"><option value="">All</option></select>
+    </label>
+    <label class="check"><input id="viableOnly" type="checkbox"> Viable only</label>
+  </section>
+
+  <main>
+    <table id="table">
+      <thead>
+        <tr>
+          <th data-sort="name">Craft</th>
+          <th data-sort="batch" class="num">Batch</th>
+          <th data-sort="cost" class="num">Buy cost</th>
+          <th data-sort="sell" class="num">Sell each</th>
+          <th data-sort="tax" class="num">GE tax</th>
+          <th data-sort="profit" class="num">Profit</th>
+          <th data-sort="profitPerCraft" class="num">Profit / craft</th>
+          <th data-sort="hours" class="num">Median cycle</th>
+          <th data-sort="profitPerHour" class="num">Profit / hour</th>
+          <th data-sort="roi" class="num">ROI</th>
+          <th data-sort="instant" class="num">Instant profit</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </main>
+
+  <footer>
+    <p>Prices from the <a href="https://oldschool.runescape.wiki/w/RuneScape:Real-time_Prices" target="_blank" rel="noopener">OSRS Wiki real-time prices API</a>, refreshed every minute.
+    Wait times are modelled by replaying recent trade history. They are estimates, not guarantees.
+    GE tax: 2% per item, rounded down, capped at 5M.</p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -86,7 +86,7 @@ test('buy advice: raise a lowball offer, cancel when the craft turns unprofitabl
 test('rankCrafts scores viable crafts and respects the hands-on time limit', () => {
   const quick = evaluateRecipe(recipe, getItem, opts);
   const slow = evaluateRecipe({ ...recipe, id: 'slow', craftSeconds: 3600 }, getItem, opts);
-  const ranked = rankCrafts([quick, slow], 15);
+  const ranked = rankCrafts([quick, slow], 15, new Set(), Infinity, 0);
   assert.deepStrictEqual(ranked.map((r) => r.id), ['t']);
   assert.ok(ranked[0].score >= 0 && ranked[0].score <= 100);
 });
@@ -123,7 +123,7 @@ test('picks rank by gp/h and skip what you cannot afford or what clashes with op
     plan: { cost, riskAdjusted: gph, profit: gph, profitPerActiveHour: gph, profitPerHour: gph, roi: 0.1, pLoss: 0,
       seconds: 3600, hours: 1, activeSeconds: 60, buySeconds: 1800, inputs: [{ p90: 1 }], sell: { p90: 1 } } });
   const res = [mk('a', 'A', 50, 5), mk('b', 'B', 500, 50), mk('c', 'C', 40, 9), mk('d', 'D', 10, 20)];
-  const ranked = rankCrafts(res, 15, new Set(['D']), 100);
+  const ranked = rankCrafts(res, 15, new Set(['D']), 100, 0);
   assert.deepStrictEqual(ranked.map((r) => r.id), ['c', 'a']);
   assert.strictEqual(ranked[0].score, 100);
 });

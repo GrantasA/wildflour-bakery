@@ -4,7 +4,7 @@ const { priceCurve, fillAt, sellOptions } = require('./market');
 const { DEFAULTS, evaluateRecipe } = require('./optimizer');
 const { taxPerItem } = require('./tax');
 const { costOf, breakEvenPrice } = require('./positions');
-const { eligible, gph } = require('./portfolio');
+const { eligible, gph, worthwhileFloor } = require('./portfolio');
 
 // ---------- "Best in all aspects" ranking ----------
 
@@ -31,9 +31,10 @@ function worstP90(plan) {
 // Crafts that clash with your open trades, need too much hands-on time or
 // look like a price spike / crash are left out. The other metrics only
 // explain *why* a craft ranks well (the chips in the UI).
-function rankCrafts(results, maxActiveMinutes, busyItems = new Set(), freeGp = Infinity) {
+function rankCrafts(results, maxActiveMinutes, busyItems = new Set(), freeGp = Infinity, minGph = undefined) {
   // only what you can afford with the GP you have free
-  const pool = eligible(results, busyItems, maxActiveMinutes).filter((r) => r.plan.cost <= freeGp);
+  const floor = worthwhileFloor(results, minGph);
+  const pool = eligible(results, busyItems, maxActiveMinutes).filter((r) => r.plan.cost <= freeGp && gph(r) >= floor);
   if (!pool.length) return [];
   const pct = new Map(pool.map((r) => [r, {}]));
   for (const m of METRICS) {

@@ -264,10 +264,8 @@ function renderSlots() {
   els.slotBar.innerHTML = cells.slice(0, 8).join('');
   els.slotBar.setAttribute('aria-label', `${sp.usedByTrades.slots} slots in use by your trades, ${sp.slotsPlanned} suggested, ${sp.freeSlots - sp.slotsPlanned} free`);
   els.slotSummary.textContent = sp.picks.length
-    ? `+${gp(sp.gph)} gp/h in total · uses ${sp.slotsPlanned} of ${sp.freeSlots} free slots and ${gp(sp.cashPlanned)} of ${gp(sp.freeCash)} free GP · expected ${gpSigned(sp.profit)} (bad case ${gpSigned(sp.badProfit)})`
-    : sp.freeSlots === 0 ? 'All your slots are busy with open trades.'
-      : sp.freeCash <= 0 ? 'All your capital is tied up in open trades.'
-        : 'Nothing worth doing fits your free slots and cash right now.';
+    ? `+${gp(sp.gph)} gp/h in total (only crafts over ${gp(sp.minGph)} gp/h) · uses ${sp.slotsPlanned} of ${sp.freeSlots} free slots and ${gp(sp.cashPlanned)} of ${gp(sp.freeCash)} free GP · expected ${gpSigned(sp.profit)} (bad case ${gpSigned(sp.badProfit)})`
+    : sp.note || 'Nothing worth doing fits your free slots and GP right now.';
   els.slotPicks.innerHTML = sp.picks.length ? `<div class="table-wrap"><table class="slot-list"><thead><tr>
       <th>Craft</th><th class="num">GP / hour</th><th class="num">Batch</th><th class="num">Slots</th><th class="num">GP needed</th><th class="num">Profit</th>
       <th class="num">Bad case</th><th class="num">Loss risk</th><th class="num">Takes</th><th></th></tr></thead><tbody>
@@ -277,6 +275,7 @@ function renderSlots() {
       <td class="num">${Math.round(p.pLoss * 100)}%</td><td class="num">${dur(p.hours * 3600)}</td>
       <td class="num"><button class="btn small primary" data-start="${esc(p.id)}" data-batch="${p.batch}">Start</button></td></tr>`).join('')}
     </tbody></table></div>` : '';
+  if (sp.picks.length && sp.note) els.slotPicks.insertAdjacentHTML('beforeend', `<p class="muted small">Other slots left free: ${esc(sp.note)}</p>`);
 }
 
 function renderPicks() {
@@ -284,7 +283,7 @@ function renderPicks() {
   const byId = resultsById();
   const picks = data.best.map((id) => byId.get(id)).filter(Boolean);
   if (!picks.length) {
-    els.picks.innerHTML = '<p class="empty">No craft is profitable within your limits right now. Try a longer max GE wait or more hands-on time in Settings.</p>';
+    els.picks.innerHTML = `<p class="empty">${esc(data.bestNote || 'Nothing worth doing right now.')}</p>`;
     return;
   }
   const [top, ...rest] = picks;
@@ -465,7 +464,9 @@ function rowHtml(r) {
     return `<tr class="row dim"><td>${title}</td><td colspan="10" class="muted">${esc(r.status === 'nodata' ? 'Loading price history: ' : 'Error: ')}${esc((r.missing || []).join(', '))}</td></tr>`;
   }
   const p = r.plan;
-  const flags = r.flags.length ? `<div class="flagline">${r.flags.map((f) => `<span class="flag">${esc(f)}</span>`).join('')}</div>` : '';
+  const floor = data.slotPlan ? data.slotPlan.minGph : 0;
+  const allFlags = [...r.flags, ...(r.viable && gphOf(r) < floor ? [`under ${gp(floor)} gp/h: not worth the clicks`] : [])];
+  const flags = allFlags.length ? `<div class="flagline">${allFlags.map((f) => `<span class="flag">${esc(f)}</span>`).join('')}</div>` : '';
   const g = gphOf(r);
   const share = Math.max(0, Math.min(100, (100 * g) / Math.max(1, topGph)));
   const score = `<span class="scorebar"><i style="width:${share}%"></i></span><b class="${cls(g)}">${gp(g)}</b>`;
@@ -500,6 +501,8 @@ function detailHtml(r) {
   const p = r.plan, s = p.sell, i = r.instant;
   return `<tr class="detail"><td colspan="11"><div class="detail">
     <p class="muted">${esc(r.skills || '')}${r.notes ? ' · ' + esc(r.notes) : ''}${r.coins ? ` · ${gpExact(r.coins)} gp fee per craft` : ''}</p>
+    ${r.batchOptions && r.batchOptions.length > 1 ? `<p class="muted">Batch chosen for the best gp/h (max possible ${r.maxBatch}): ${r.batchOptions.map((o) =>
+      `${o.batch === r.batch ? '<b>' : ''}${o.batch} → ${gp(o.gph)}/h${o.batch === r.batch ? '</b>' : ''}`).join(' · ')}</p>` : ''}
     <p>Batch of ${r.batch}: cost ${gpExact(p.cost)} · revenue ${gpExact(p.revenue)} · tax ${gpExact(p.taxTotal)} ·
       <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> · buy ~${dur(p.buySeconds)}, craft ${dur(p.craftSeconds)}, sell ~${dur(s.median)}</p>
     <p class="muted">At the last traded prices (buy at the last price buyers paid, sell at the last price sellers took; these are recent trades, not guaranteed instant fills): ${gpSigned(i.profit)}, likely ~${dur(i.seconds)}</p>

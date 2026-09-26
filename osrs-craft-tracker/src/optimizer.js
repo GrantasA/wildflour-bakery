@@ -16,12 +16,16 @@ const DEFAULTS = {
 // Buy windows the price AI is asked about when building an input's options.
 const AI_BUY_WINDOWS = [5 / 60, 0.5, 1, 4, 8, 12, 24, 48].map((h) => Math.round(h * 3600));
 
+// How many batch sizes to try when choosing the best one.
+const BATCH_STEPS = 4;
+const batchHints = new Map(); // recipe + settings -> last best batch
+
 // Hands-on time to place and collect one GE offer.
 const OFFER_SECONDS = 15;
 
 // How many crafts to plan per cycle: as many as every input's 4-hour buy limit
 // allows, capped by the capital you're willing to tie up.
-function batchSize(recipe, inputs, capital) {
+function batchSize(recipe, inputs, capital, maxActiveMinutes = Infinity) {
   if (recipe.batch) return recipe.batch;
   let n = Infinity;
   for (const inp of inputs) {
@@ -31,6 +35,12 @@ function batchSize(recipe, inputs, capital) {
   const unitCost = inputs.reduce((a, i) => a + i.qty * (i.item.latest.high || i.item.latest.low || 0), 0)
     + (recipe.coins || 0);
   if (unitCost > 0) n = Math.min(n, Math.floor(capital / unitCost));
+  // "least work": no more crafts than fit in your clicking limit
+  if (Number.isFinite(maxActiveMinutes)) {
+    const perCraft = recipe.craftSeconds || 3;
+    const budget = maxActiveMinutes * 60 - OFFER_SECONDS * (inputs.length + 1);
+    n = Math.min(n, Math.floor(budget / perCraft));
+  }
   return Math.max(1, n);
 }
 
@@ -117,8 +127,55 @@ function aiBuyCurve(advisor, item, qty, maxSec, opts) {
   return { points: frontier, series: 'ai' };
 }
 
+// Pick the batch size with the best score (gp/h by default). Bigger batches
+// make more per cycle but take longer to buy and sell, so the best size is
+// often below the maximum the buy limits, your GP and your clicking limit
+// allow. Tries a spread of sizes from 1 to that maximum, then refines around
+// the best one.
 function evaluateRecipe(recipe, getItem, settings = {}) {
   const opts = { ...DEFAULTS, ...settings };
+  if (recipe.batch) return evaluateAtBatch(recipe, getItem, opts);
+  const first = evaluateAtBatch(recipe, getItem, opts); // at the maximum batch
+  if (first.status !== 'ok' || first.batch <= 1) return first;
+  const nMax = first.batch;
+  const tried = new Map([[nMax, first]]);
+  const tryBatch = (b) => {
+    b = Math.max(1, Math.min(nMax, Math.round(b)));
+    if (!tried.has(b)) tried.set(b, evaluateAtBatch({ ...recipe, batch: b }, getItem, opts));
+    return tried.get(b);
+  };
+  const val = (r) => (r.status === 'ok' ? score(r.plan, opts.objective) : -Infinity);
+  // Last minute's winner is usually still close, so start from there when we
+  // have one; otherwise spread sizes log-evenly between 1 and the maximum.
+  const hintKey = `${recipe.id}:${opts.capital}:${opts.riskAversion}:${opts.buyWithinHours}:${opts.sellWithinHours}`;
+  const hint = batchHints.get(hintKey);
+  let rounds = 2;
+  if (hint && hint <= nMax) {
+    for (const b of [hint, hint * 1.5, hint / 1.5]) tryBatch(b);
+    rounds = 1;
+  } else {
+    for (let k = 0; k < BATCH_STEPS; k++) tryBatch(Math.pow(nMax, k / (BATCH_STEPS - 1)));
+  }
+  // refine: halfway (geometrically) to the neighbours of the best size
+  const sizes = () => [...tried.keys()].sort((a, b) => a - b);
+  for (let round = 0; round < rounds; round++) {
+    const list = sizes();
+    const bestB = list.reduce((a, b) => (val(tried.get(b)) > val(tried.get(a)) ? b : a));
+    const i = list.indexOf(bestB);
+    if (i > 0) tryBatch(Math.sqrt(list[i - 1] * bestB));
+    if (i < list.length - 1) tryBatch(Math.sqrt(list[i + 1] * bestB));
+  }
+  const list = sizes();
+  const bestB = list.reduce((a, b) => (val(tried.get(b)) > val(tried.get(a)) ? b : a));
+  const best = tried.get(bestB);
+  batchHints.set(hintKey, bestB);
+  best.maxBatch = nMax;
+  best.batchOptions = list.filter((b) => tried.get(b).status === 'ok')
+    .map((b) => ({ batch: b, gph: tried.get(b).plan.riskAdjusted / Math.max(tried.get(b).plan.hours, 1 / 60), profit: tried.get(b).plan.profit }));
+  return best;
+}
+
+function evaluateAtBatch(recipe, getItem, opts) {
   const base = {
     id: recipe.id, category: recipe.category, skills: recipe.skills, notes: recipe.notes,
     name: recipe.output.item, outputQty: recipe.output.qty,
@@ -139,7 +196,7 @@ function evaluateRecipe(recipe, getItem, settings = {}) {
   const noPrice = [...inputs.map((i) => i.item), output].filter((it) => !it.latest || (!it.latest.high && !it.latest.low));
   if (noPrice.length) return { ...base, status: 'nodata', missing: noPrice.map((i) => i.name) };
 
-  const n = batchSize(recipe, inputs, opts.capital);
+  const n = batchSize(recipe, inputs, opts.capital, opts.maxActive);
   // Let the price AI pick buy prices where it can; otherwise use the fill-time model.
   const buyCurves = inputs.map((inp) => (opts.buyAdvisor
     ? aiBuyCurve(opts.buyAdvisor, inp.item, inp.qty * n, (opts.buyWithinHours ?? opts.maxWaitHours) * 3600, opts) : null)

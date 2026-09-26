@@ -16,6 +16,10 @@ const { costOf } = require('./positions');
 // A small search picks the combination with the best total gp/h.
 
 const OPEN = new Set(['buying', 'ready', 'selling']);
+// Never suggest a craft earning less than this, or less than 5% of the best one
+// right now: an empty slot beats clicking for pocket change.
+const MIN_GPH = 50_000;
+const MIN_SHARE_OF_BEST = 0.05;
 const TOP_CANDIDATES = 12;
 const MAX_STEPS = 200_000;
 
@@ -49,13 +53,45 @@ function eligible(results, busyItems, maxActiveMinutes) {
     !itemsOf(r).some((n) => busyItems.has(n)));
 }
 
+// The gp/h a craft must reach to be worth suggesting, given the best available.
+function worthwhileFloor(results, minGph = MIN_GPH) {
+  const best = Math.max(0, ...results.filter((r) => r.status === 'ok' && r.viable).map(gph));
+  return Math.max(minGph, MIN_SHARE_OF_BEST * best);
+}
+
+// Why nothing (more) is suggested, in plain words.
+function explainEmpty({ results, busyItems, maxActiveMinutes, freeCash, freeSlots, floor }) {
+  if (freeSlots <= 0) return 'All your GE slots are busy with open trades.';
+  const ok = results.filter((r) => r.status === 'ok');
+  if (!ok.length) return 'Still loading prices.';
+  const profitable = ok.filter((r) => r.viable && r.plan.riskAdjusted > 0);
+  if (!profitable.length) return 'No craft is profitable within your timeframe and risk right now. Try a longer timeframe or higher risk.';
+  const cand = eligible(results, busyItems, maxActiveMinutes);
+  if (!cand.length) return 'The profitable crafts clash with your open trades, look like price spikes, or need too much clicking.';
+  const worthy = cand.filter((r) => gph(r) >= floor);
+  if (!worthy.length) return `Only low earners are available (under ${fmtGp(floor)} gp/h), so slots are left empty rather than wasting your clicks.`;
+  const cheapest = Math.min(...worthy.map((r) => r.plan.cost / Math.max(1, r.batch)));
+  if (cheapest > freeCash) return `The worthwhile crafts need more GP: the cheapest needs about ${fmtGp(cheapest)} for a single craft, you have ${fmtGp(freeCash)} free.`;
+  return `The ${fmtGp(freeCash)} GP left doesn't stretch to another worthwhile craft at a batch size that pays.`;
+}
+
+function fmtGp(n) {
+  const a = Math.abs(n);
+  if (a >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (a >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (a >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(Math.round(n));
+}
+
 // results: evaluated crafts. replan(recipeId, batch) re-evaluates a craft at
 // another batch size (or returns null).
-function planSlots({ results, positions = [], capital, slots = 8, maxActiveMinutes = 15, replan }) {
+function planSlots({ results, positions = [], capital, slots = 8, maxActiveMinutes = 15, replan, minGph = MIN_GPH }) {
   const used = inUse(positions);
   const freeCash = Math.max(0, capital - used.cash);
   const freeSlots = Math.max(0, slots - used.slots);
+  const floor = worthwhileFloor(results, minGph);
   const pool = eligible(results, used.items, maxActiveMinutes)
+    .filter((r) => gph(r) >= floor)
     .sort((a, b) => gph(b) - gph(a)).slice(0, TOP_CANDIDATES);
 
   // batch options per craft: full, half, quarter, and "whatever GP is free"
@@ -71,7 +107,7 @@ function planSlots({ results, positions = [], capital, slots = 8, maxActiveMinut
     }
     return opts.filter((o) => o.plan.cost <= freeCash).map((o) => ({
       r: o, gph: gph(o), cost: o.plan.cost, slots: o.plan.inputs.length, items: itemsOf(o),
-    })).filter((o) => o.gph > 0);
+    })).filter((o) => o.gph >= floor);
   });
 
   // depth-first search with a simple upper bound
@@ -113,7 +149,13 @@ function planSlots({ results, positions = [], capital, slots = 8, maxActiveMinut
     profit: picks.reduce((a, p) => a + p.profit, 0),
     badProfit: picks.reduce((a, p) => a + p.badProfit, 0),
     searchSteps: steps,
+    minGph: floor,
+    // why nothing, or nothing more, was suggested
+    note: picks.length && picks.reduce((a, p) => a + p.slots, 0) >= freeSlots ? null
+      : explainEmpty({ results, busyItems: new Set([...used.items, ...picks.flatMap((p) => itemsOf(results.find((r) => r.id === p.id) || { name: p.name }))]),
+        maxActiveMinutes, freeCash: freeCash - picks.reduce((a, p) => a + p.cost, 0),
+        freeSlots: freeSlots - picks.reduce((a, p) => a + p.slots, 0), floor }),
   };
 }
 
-module.exports = { planSlots, inUse, eligible, gph, itemsOf };
+module.exports = { planSlots, inUse, eligible, gph, itemsOf, worthwhileFloor, explainEmpty, MIN_GPH };

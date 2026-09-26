@@ -11,7 +11,7 @@ const { PriceAI } = require('./ai');
 const { Journal } = require('./journal');
 const { RISK_LEVELS } = require('./risk');
 const { HistoryFiles } = require('./history');
-const { planSlots, inUse } = require('./portfolio');
+const { planSlots, inUse, explainEmpty, worthwhileFloor } = require('./portfolio');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -296,8 +296,10 @@ function slotPlan(settings) {
   const { results } = computeResults(settings);
   // best single crafts to start, skipping anything that clashes with open trades
   const used = inUse(positions.list());
-  const best = rankCrafts(results, settings.maxActive, used.items, Math.max(0, settings.capital - used.cash))
-    .slice(0, 5).map((r) => r.id);
+  const freeGp = Math.max(0, settings.capital - used.cash);
+  const best = rankCrafts(results, settings.maxActive, used.items, freeGp).slice(0, 5).map((r) => r.id);
+  const bestNote = best.length ? null : explainEmpty({ results, busyItems: used.items, maxActiveMinutes: settings.maxActive,
+    freeCash: freeGp, freeSlots: Infinity, floor: worthwhileFloor(results) });
   const opts = { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') };
   const plan = planSlots({
     results, positions: positions.list(), capital: settings.capital, slots: settings.slots,
@@ -307,7 +309,7 @@ function slotPlan(settings) {
       return recipe ? evaluateRecipe({ ...recipe, batch }, (n) => store.getItem(n), opts) : null;
     },
   });
-  const out = { plan, best };
+  const out = { plan, best, bestNote };
   slotCache.clear();
   slotCache.set(key, out);
   return out;
@@ -403,7 +405,7 @@ const server = http.createServer((req, res) => {
       errors: state.errors.slice(0, 5),
       settings,
       ...(state.lastRefresh ? computeResults(settings) : { results: [] }),
-      ...(state.lastRefresh ? (({ plan, best }) => ({ slotPlan: plan, best }))(slotPlan(settings)) : { slotPlan: null, best: [] }),
+      ...(state.lastRefresh ? (({ plan, best, bestNote }) => ({ slotPlan: plan, best, bestNote }))(slotPlan(settings)) : { slotPlan: null, best: [] }),
       positions: positionsView(settings),
       ai: aiStatus(settings),
       stats: stats(positions.list()),

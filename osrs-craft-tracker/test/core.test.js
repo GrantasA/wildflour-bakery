@@ -109,3 +109,22 @@ test('active time excludes GE waiting; activeProfit objective takes the patient 
   assert.ok(patient.plan.profit >= fast.plan.profit);
   assert.ok(patient.plan.profitPerActiveHour >= fast.plan.profitPerActiveHour);
 });
+
+test('batch size is chosen for gp/h, within buy limits and the clicking limit', () => {
+  // thin market: 3 units per 5 min each side, so huge batches take ages to fill
+  const items = { A: mkItem('A', 1000, 3), Out: mkItem('Out', 1300, 3) };
+  const recipe = { id: 'bs', category: 'T', inputs: [{ item: 'A', qty: 1 }], output: { item: 'Out', qty: 1 }, craftSeconds: 1 };
+  const opts = { share: 0.5, maxWaitHours: 1e6, capital: 1e12, objective: 'profitPerHour' };
+  const r = evaluateRecipe(recipe, (n) => items[n], opts);
+  assert.strictEqual(r.status, 'ok');
+  assert.strictEqual(r.maxBatch, 1000); // the buy limit
+  const g = (x) => x.gph;
+  const atMax = r.batchOptions.find((o) => o.batch === 1000);
+  const chosen = r.batchOptions.find((o) => o.batch === r.batch);
+  assert.ok(r.batch < 1000, `chose ${r.batch}`);
+  assert.ok(g(chosen) >= g(atMax));
+  assert.ok(r.batchOptions.every((o) => g(o) <= g(chosen) + 1e-9));
+  // clicking limit: 1 minute of work, 15s per offer x2 offers, 10s per craft -> at most 3 crafts
+  const r2 = evaluateRecipe({ ...recipe, craftSeconds: 10 }, (n) => items[n], { ...opts, maxActive: 1 });
+  assert.ok(r2.batch <= 3 && r2.maxBatch <= 3, `batch ${r2.batch} max ${r2.maxBatch}`);
+});

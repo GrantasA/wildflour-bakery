@@ -10,6 +10,7 @@ const { rankCrafts, advise } = require('./copilot');
 const { PriceAI } = require('./ai');
 const { Journal } = require('./journal');
 const { RISK_LEVELS } = require('./risk');
+const { HistoryFiles } = require('./history');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -17,6 +18,10 @@ const HOST = process.env.HOST || '127.0.0.1';
 const POSITIONS_FILE = process.env.POSITIONS_FILE ||
   path.join(__dirname, '..', 'data', process.argv.includes('--mock') ? 'positions-mock.json' : 'positions.json');
 const REFRESH_MS = 60_000;                // prices + viability every minute
+// Poll the latest trade prices this often to catch exact trade prices
+// (0 turns it off). Kept modest to stay polite to the Wiki API.
+const TICK_MS = (process.env.TICK_SECONDS != null ? Number(process.env.TICK_SECONDS) : 10) * 1000;
+const COMPACT_MS = 6 * 3600_000;
 const HOURLY_BUCKET_MS = 10 * 60_000;
 const BACKFILL_MAX_AGE_MS = 6 * 3600_000; // re-pull full history every 6h
 const MAPPING_MAX_AGE_MS = 24 * 3600_000;
@@ -27,7 +32,15 @@ const USER_AGENT = process.env.OSRS_USER_AGENT ||
   'osrs-craft-profit-tracker/1.0 (personal GE crafting profit tool; set OSRS_USER_AGENT to add your contact)';
 
 const fetchImpl = MOCK ? require('./mock').createMockFetch(() => loadRecipes().recipes) : globalThis.fetch;
-const store = new PriceStore({ userAgent: USER_AGENT, fetchImpl });
+const historyFiles = new HistoryFiles(path.dirname(POSITIONS_FILE), MOCK ? '-mock' : '');
+const store = new PriceStore({ userAgent: USER_AGENT, fetchImpl, persist: historyFiles });
+{
+  const t0 = Date.now();
+  const ticks = historyFiles.loadInto(store);
+  const m = store.memoryStats();
+  console.log(`Loaded saved history: ${m.days5m.toFixed(1)} days (5-min), ${m.days1h.toFixed(1)} days (hourly), ${ticks} trade prices in ${Date.now() - t0}ms`);
+  historyFiles.compact(store);
+}
 const positions = new PositionStore(POSITIONS_FILE);
 const priceAI = new PriceAI();
 const DATA_DIR = path.dirname(POSITIONS_FILE);
@@ -39,6 +52,9 @@ const AI_WINDOWS = [0.5, 1, 2, 4, 8, 12, 24, 48].map((h) => h * 3600);
 const snapWindow = (sec) => AI_WINDOWS.find((w) => w >= sec) || AI_WINDOWS[AI_WINDOWS.length - 1];
 const aiWindowsInUse = { sell: new Set([2 * 3600]), buy: new Set([4 * 3600]) };
 const backtests = { sell: new Map(), buy: new Map() }; // side -> windowSec -> result
+
+// The AI's training sets only change when a new 5-minute / hourly bucket lands.
+const aiVersion = (step) => `${store.lastBucket[step === 300 ? '5m' : '1h']}:${aiItems().length}`;
 
 let aiItemsCache = { version: -1, items: [] };
 function aiItems() {
@@ -63,7 +79,7 @@ function advisorFor(settings, side) {
     aiWindowsInUse[side].add(w);
     if (!aiAllowed(side, w)) return null;
     try {
-      const s = priceAI.suggest(aiItems(), store.version, item, qty, w, settings.share, {
+      const s = priceAI.suggest(aiItems(), aiVersion, item, qty, w, settings.share, {
         side, riskAversion: settings.riskAversion, calibrate: journal.calibrator(side),
       });
       // Write it down so it can be graded against the real chart later.
@@ -100,7 +116,7 @@ function runBacktests() {
     if (!job) { backtesting = false; resultsCache.clear(); return; }
     const [side, w] = job;
     try {
-      const res = priceAI.runBacktest(aiItems(), store.version, w, DEFAULTS.share, { side });
+      const res = priceAI.runBacktest(aiItems(), aiVersion, w, DEFAULTS.share, { side });
       if (res) backtests[side].set(w, res);
     } catch (e) {
       logError('ai backtest', e);
@@ -196,6 +212,7 @@ async function refresh() {
     }
     state.lastRefresh = Date.now();
     gradeJournal();
+    historyFiles.flush();
   } catch (e) {
     logError('refresh', e);
   }
@@ -341,6 +358,7 @@ const server = http.createServer((req, res) => {
       positions: positionsView(settings),
       ai: aiStatus(settings),
       stats: stats(positions.list()),
+      memory: store.memoryStats(),
     };
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(body));
@@ -357,11 +375,31 @@ const server = http.createServer((req, res) => {
   fs.createReadStream(full).pipe(res);
 });
 
+let polling = false;
+async function tickPoll() {
+  if (polling || !state.lastRefresh) return;
+  polling = true;
+  try {
+    await store.pollTicks();
+  } catch (e) {
+    logError('tick poll', e);
+  } finally {
+    polling = false;
+  }
+}
+
 server.listen(PORT, HOST, () => {
   console.log(`OSRS craft tracker on http://localhost:${PORT}${MOCK ? ' (MOCK DATA)' : ''}`);
   refresh();
   setInterval(refresh, REFRESH_MS);
+  if (TICK_MS > 0) setInterval(tickPoll, TICK_MS);
+  setInterval(() => { try { historyFiles.compact(store); } catch (e) { logError('compact', e); } }, COMPACT_MS);
 });
 
 // Exit cleanly on Ctrl+C / kill so any pending output is flushed.
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    try { historyFiles.flush(); } catch (e) { /* exiting anyway */ }
+    process.exit(0);
+  });
+}

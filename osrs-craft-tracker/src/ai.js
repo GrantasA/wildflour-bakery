@@ -88,6 +88,7 @@ function clamp(x, lo, hi) {
 // What happened after moment t, relative to the insta-buy price then.
 function future(s, t, H) {
   const relHi = new Float64Array(H), hv = new Float64Array(H), relLo = new Float64Array(H), lv = new Float64Array(H);
+  const hiT = new Array(H).fill(null), loT = new Array(H).fill(null); // exact trade prices, relative
   const ref = s.hi[t];
   let endLo = NaN, endHi = NaN;
   for (let k = 0; k < H; k++) {
@@ -96,6 +97,8 @@ function future(s, t, H) {
     hv[k] = b.highVol;
     relLo[k] = b.avgLow ? Math.log(b.avgLow) - ref : NaN;
     lv[k] = b.lowVol;
+    if (b.hiTicks) hiT[k] = b.hiTicks.map(([p, c]) => [Math.log(p) - ref, c]);
+    if (b.loTicks) loT[k] = b.loTicks.map(([p, c]) => [Math.log(p) - ref, c]);
     if (b.avgLow) endLo = relLo[k];
     if (b.avgHigh) endHi = relHi[k];
   }
@@ -105,7 +108,12 @@ function future(s, t, H) {
   for (let k = 0; k < H; k++) {
     for (const v of [relHi[k], relLo[k]]) if (!Number.isNaN(v)) { peak = Math.max(peak, v); trough = Math.min(trough, v); }
   }
-  return { relHi, hv, relLo, lv, endLo, endHi, peak, trough };
+  // exact trades can reach further than the averages
+  for (const arr of [...hiT, ...loT]) {
+    if (!arr) continue;
+    for (const [v] of arr) { peak = Math.max(peak, v); trough = Math.min(trough, v); }
+  }
+  return { relHi, hv, relLo, lv, hiT, loT, endLo, endHi, peak, trough };
 }
 
 // Seconds until an offer at relative price x fills `need` units, or Infinity.
@@ -113,8 +121,16 @@ function future(s, t, H) {
 function fillTime(fut, x, need, share, step, side = 'sell') {
   let cum = 0;
   const ok = side === 'sell' ? (v) => v >= x : (v) => v <= x;
+  const ticks = (arr, cap) => {
+    if (!arr) return 0;
+    let n = 0;
+    for (const [v, c] of arr) if (ok(v)) n += c;
+    return Math.min(cap, n);
+  };
   for (let k = 0; k < fut.relHi.length; k++) {
-    const v = share * ((ok(fut.relHi[k]) ? fut.hv[k] : 0) + (ok(fut.relLo[k]) ? fut.lv[k] : 0));
+    // bucket average qualifies -> its whole volume; otherwise any exact trades that did
+    const v = share * ((ok(fut.relHi[k]) ? fut.hv[k] : ticks(fut.hiT[k], fut.hv[k])) +
+      (ok(fut.relLo[k]) ? fut.lv[k] : ticks(fut.loT[k], fut.lv[k])));
     if (cum + v >= need) return (k + (v > 0 ? (need - cum) / v : 1)) * step;
     cum += v;
   }
@@ -165,18 +181,21 @@ class PriceAI {
   // items: [{ name, series5m, series1h }] for everything tracked.
   // Rebuilt when `version` changes (i.e. every price refresh).
   dataset(items, version, step, H) {
+    if (typeof version === 'function') version = version(step);
     const key = `${step}:${H}`;
     const hit = this.cache.get(key);
     if (hit && hit.version === version) return hit;
     const series = [];
     const rows = [];
     for (const it of items) {
-      const buckets = step === 300 ? it.series5m : it.series1h;
+      // learn from the long saved history, not just the recent window
+      const buckets = step === 300 ? (it.history5m || it.series5m) : (it.history1h || it.series1h);
       if (!buckets || buckets.length < LOOKBACK + H + 10) continue;
       const s = prepare(it.name, buckets, step);
       const si = series.push(s) - 1;
-      // Neighbouring 5-minute moments are near-duplicates; every other one is plenty.
-      const stride = step === 300 ? 2 : 1;
+      // Neighbouring moments are near-duplicates; cap each item at ~600 samples
+      // so search stays fast as the saved history grows.
+      const stride = Math.max(step === 300 ? 2 : 1, Math.ceil((buckets.length - LOOKBACK - H) / 600));
       for (let t = LOOKBACK; t + H < buckets.length; t += stride) {
         const f = features(s, t);
         if (f) rows.push({ si, t, f });
@@ -311,11 +330,13 @@ class PriceAI {
   suggest(items, version, item, qty, windowSec, share, { side = 'sell', calibrate, riskAversion = 0 } = {}) {
     const step = stepFor(windowSec);
     const H = horizonFor(windowSec, step);
-    const buckets = step === 300 ? item.series5m : item.series1h;
+    // same (long) series the dataset was built from, so indices line up
+    const buckets = step === 300 ? (item.history5m || item.series5m) : (item.history1h || item.series1h);
     if (!buckets || buckets.length < LOOKBACK + 2) return null;
     const ds = this.dataset(items, version, step, H);
     if (ds.rows.length < MIN_SAMPLES) return null;
-    const memoKey = `${side}:${item.name}:${qty}:${share}:${riskAversion}:${calibrate ? calibrate.samples : 0}`;
+    const l0 = item.latest || {};
+    const memoKey = `${side}:${item.name}:${qty}:${share}:${riskAversion}:${calibrate ? calibrate.samples : 0}:${l0.high}:${l0.low}`;
     if (ds.memo.has(memoKey)) return ds.memo.get(memoKey);
     const s = prepare(item.name, buckets, step);
     const t = buckets.length - 1;

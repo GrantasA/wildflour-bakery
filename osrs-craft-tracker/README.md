@@ -118,8 +118,21 @@ The app treats these as follows:
    - Price spikes or crashes (possible manipulation) and very thinly traded items are
      flagged, and Copilot picks never include a spiked or crashed item.
 
-   The limit: it only sees what the Wiki API provides. That's 5-minute average prices and
-   volumes, not the live order book or individual trades.
+   **Memory that grows.** Price history is saved to `data/` (`history-5m.jsonl`,
+   `history-1h.jsonl`) and reloaded on start. The Wiki API only hands out about 30 hours of
+   5-minute and 15 days of hourly data, but the app keeps up to **7 days of 5-minute** and
+   **60 days of hourly** history while it runs. The AI learns from all of it.
+
+   **Exact trade prices.** Every 10 seconds (`TICK_SECONDS`, 0 to turn off) the app checks
+   the latest trades and saves every distinct price it sees to `data/ticks.jsonl`. Bucket
+   averages hide peaks and dips, and these fill that gap. If a 5-minute average never
+   reached your price but a captured trade did, that counts as at least one unit filled.
+   This applies in the fill-time model, in the AI's replays and in its self-check grading.
+   This only covers trades from when the app is running, and a 10-second poll can miss a
+   price that changed twice in between.
+
+   The limit: the Wiki API has no live order book (the offers waiting on the GE), so the AI
+   can't see those.
 5. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
    your **Capital** setting.
 
@@ -150,6 +163,7 @@ Edit `src/recipes.json`. The server picks up changes on the next refresh.
 | `OSRS_USER_AGENT` | generic | User-Agent sent to the Wiki API |
 | `RECIPES_FILE` | `src/recipes.json` | Alternative recipe file |
 | `POSITIONS_FILE` | `data/positions.json` | Where your trades are saved |
+| `TICK_SECONDS` | `10` | How often to capture exact trade prices (0 = off) |
 | `HOST` | `127.0.0.1` | Interface to listen on. Only this PC by default, since the page can edit your trades. |
 
 ## Limits of the model

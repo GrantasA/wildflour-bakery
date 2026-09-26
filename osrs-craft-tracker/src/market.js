@@ -61,11 +61,23 @@ function fracAtOrAbove(avg, price) {
 }
 
 // Volume per bucket that an offer at `price` could have matched.
+// When the bucket average says "no", captured trade prices (ticks) can still
+// prove that some units traded at or better than `price`.
+function tickUnits(ticks, side, price) {
+  if (!ticks) return 0;
+  let n = 0;
+  for (const [p, c] of ticks) if (side === 'buy' ? p <= price : p >= price) n += c;
+  return n;
+}
+
+function sideVolume(vol, avg, ticks, side, price) {
+  const f = side === 'buy' ? fracAtOrBelow(avg, price) : fracAtOrAbove(avg, price);
+  return Math.max(vol * f, Math.min(vol, tickUnits(ticks, side, price)));
+}
+
 function matchableVolumes(buckets, side, price) {
   return buckets.map((b) =>
-    side === 'buy'
-      ? b.lowVol * fracAtOrBelow(b.avgLow, price) + b.highVol * fracAtOrBelow(b.avgHigh, price)
-      : b.highVol * fracAtOrAbove(b.avgHigh, price) + b.lowVol * fracAtOrAbove(b.avgLow, price));
+    sideVolume(b.highVol, b.avgHigh, b.hiTicks, side, price) + sideVolume(b.lowVol, b.avgLow, b.loTicks, side, price));
 }
 
 function percentile(sorted, p) {
@@ -252,7 +264,7 @@ function sellOptions(item, qty, opts, windowSec = (opts.sellWithinHours ?? 2) * 
 }
 
 module.exports = {
-  sellOptions,
+  sellOptions, tickUnits,
   normalizeSeries, matchableVolumes, fillTimeStats, buyLimitSeconds,
   pickSeries, detrend, candidatePrices, priceCurve, fillAt, FOUR_HOURS, MIN_FILL_SECONDS,
 };

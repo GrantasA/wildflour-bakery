@@ -187,7 +187,11 @@ function renderAI() {
   const cal = (a.sell.journal && a.sell.journal.calibration) || [];
   const calRows = cal.filter((b) => b.n).map((b) => `<tr><td>${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%</td>
     <td class="num">${b.n}</td><td class="num">${Math.round(b.actual * 100)}%</td></tr>`).join('');
+  const mem = data.memory;
+  const memLine = mem ? `<div class="ai-fact">Memory: <b>${mem.days5m.toFixed(1)}</b> days of 5-minute history, <b>${mem.days1h.toFixed(1)}</b> days hourly, ` +
+    `<b>${mem.ticks.toLocaleString()}</b> exact trade prices captured. It keeps growing while the app runs (up to 7 days / 60 days).</div>` : '';
   els.aiBar.innerHTML = `<div class="ai-title">🤖 Price AI <span class="muted small">risk: ${esc(a.risk)}</span></div>
+    ${memLine}
     <div class="ai-sides">${side('Sell prices', a.sell, 'undercutting by 1gp')}${side('Buy prices', a.buy, 'bidding 1gp over the best bid')}</div>
     ${calRows ? `<details class="small"><summary>How well its sell predictions came true</summary>
       <table class="cal"><thead><tr><th>It said</th><th class="num">Times</th><th class="num">Actually filled</th></tr></thead><tbody>${calRows}</tbody></table>

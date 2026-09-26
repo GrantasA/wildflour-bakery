@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { taxPerItem } = require('./tax');
+const { tickUnits } = require('./market');
 
 // The AI's self-check journal.
 //
@@ -195,7 +196,10 @@ function outcome(win, price, qty, share, step, side = 'sell') {
   let cum = 0;
   for (let k = 0; k < win.length; k++) {
     const b = win[k];
-    const v = share * ((ok(b.avgHigh) ? b.highVol : 0) + (ok(b.avgLow) ? b.lowVol : 0));
+    // bucket averages, or else any exact trade prices captured in that bucket
+    const hv = ok(b.avgHigh) ? b.highVol : Math.min(b.highVol, tickUnits(b.hiTicks, side, price));
+    const lv = ok(b.avgLow) ? b.lowVol : Math.min(b.lowVol, tickUnits(b.loTicks, side, price));
+    const v = share * (hv + lv);
     if (cum + v >= qty) return { hit: true, fillSec: (k + (v > 0 ? (qty - cum) / v : 1)) * step };
     cum += v;
   }

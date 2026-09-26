@@ -75,33 +75,51 @@ The app treats these as follows:
    - **Total profit**: the most profit per batch that fits in **Max wait**.
 
    Plans longer than **Max wait** are flagged, greyed out and listed after the ones that fit.
-4. **Sell price: the sell-price AI.** This is in `src/ai.js`. It is a pattern-matching
+4. **The price AI (buy and sell prices).** This is in `src/ai.js`. It is a pattern-matching
    ("nearest neighbour") model that runs on your own PC, with no API key and no cost. It
    works in four steps:
    1. **Describe the chart.** It turns the item's current chart into numbers: the recent
-      price shape relative to now, volatility, where the price sits in its recent range, the
-      volume trend, the buy/sell spread, and the time of day.
-   2. **Find similar moments.** It searches the history of every tracked item for the 60
-      moments that looked most similar.
+      price shape, volatility, where the price sits in its recent range, the volume trend,
+      the buy/sell spread, and the time of day.
+   2. **Find similar moments.** It searches the history of every tracked item for the most
+      similar moments.
    3. **Replay what happened next.** For each of those moments, it replays the following
-      **Sell within** window (default 2 hours): how high buyers paid, and whether a sale of
-      your size would have filled.
-   4. **Pick the price.** For every candidate price it works out the chance of selling in
-      time, plus what you'd get by dumping at the end if it doesn't sell. It picks the
-      price with the best expected payout after GE tax.
+      window. For selling: did buyers pay at least that price, with enough volume for your
+      quantity? For buying: did sellers let it go at or below that price?
+   4. **Pick the price.** For every candidate price it works out the chance of filling in
+      time, plus what happens if it doesn't: you dump at the market to sell, or pay the
+      market to buy. It picks the best expected result after GE tax, adjusted for your risk
+      setting.
 
-   So it lists above the market when similar charts usually rose, and lower when they
-   usually dipped. While your offer is up, it re-checks every minute and tells you to relist
-   if a different price is clearly better.
+   Buy prices are checked across several windows (1h, 4h, 12h, 24h, 48h up to your max
+   wait), so the plan can weigh "cheap but slow" against "quick". While offers are up, the
+   Copilot re-checks every minute and says raise, lower, relist or keep. It only suggests a
+   change for a real gain, because moving an offer loses your place in the queue.
 
-   **It grades itself.** Every 10 minutes it backtests: it trains on the older 75% of the
-   history and tests on the newest 25% it hasn't seen. The dashboard shows how it did
-   against simply undercutting by 1gp, and whether its "chance to sell" figures came true.
-   If it loses to undercutting, it switches itself off and the app falls back to
-   undercutting by 1gp. You can also turn it off in Settings.
+   The "last buy/sell price" figures are the most recent trades, not guaranteed instant
+   fills. The AI treats them as just another price with its own chance of filling.
 
-   The limit: it only sees what the Wiki API provides, which is trade prices and volumes,
-   not the live order book. Treat it as an edge, not a guarantee.
+   **It checks itself and learns.** Every suggestion it makes is written to
+   `data/ai-journal.jsonl`. Once the window has passed, it reads the real chart for that
+   period and grades whether the offer would have filled. It grades the simple rule (1gp
+   under or over the market) the same way, so you see its real edge. The graded record
+   corrects its future fill chances: if its "80%" only came true 65% of the time, it adjusts.
+   Every 10 minutes it also backtests (trains on the older 75% of history, tests on the
+   newest 25%) and tunes how many similar charts to use. If it loses to the simple rule on
+   either side, it switches that side off and the app uses the rule instead.
+
+   **Risk.** The risk setting (**Careful / Balanced / Bold**) decides how much the bad case
+   counts:
+   - In the AI, the bad case is the worst 20% of outcomes.
+   - For each craft, it's the product's price moving against you while you buy and craft,
+     measured from how much that item's price has actually moved over the same length of
+     time.
+   - Each craft shows a **bad case** (worst 10%) and a **chance of a loss**.
+   - Price spikes or crashes (possible manipulation) and very thinly traded items are
+     flagged, and Copilot picks never include a spiked or crashed item.
+
+   The limit: it only sees what the Wiki API provides. That's 5-minute average prices and
+   volumes, not the live order book or individual trades.
 5. **Batch size.** A batch is as many crafts as the inputs' 4-hour buy limits allow, capped by
    your **Capital** setting.
 

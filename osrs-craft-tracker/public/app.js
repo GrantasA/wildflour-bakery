@@ -5,7 +5,7 @@ const els = {
   rows: $('rows'), picks: $('picks'), positions: $('positions'), history: $('history'), chart: $('chart'),
   live: $('live'), liveText: $('liveText'), mock: $('mock'), hidden: $('hidden'), tooltip: $('tooltip'),
   settings: $('settings'), settingsBtn: $('settingsBtn'),
-  aiBar: $('aiBar'), useAI: $('useAI'),
+  aiBar: $('aiBar'), useAI: $('useAI'), risk: $('risk'),
   objective: $('objective'), sellWithin: $('sellWithin'), maxWait: $('maxWait'), maxActive: $('maxActive'), capital: $('capital'), share: $('share'),
   search: $('search'), category: $('category'), viableOnly: $('viableOnly'),
   dialog: $('startDialog'), form: $('startForm'), startRecipe: $('startRecipe'), startBatch: $('startBatch'),
@@ -55,10 +55,10 @@ function when(ts) {
 }
 
 // ---------- settings ----------
-const SETTINGS = ['objective', 'sellWithin', 'maxWait', 'maxActive', 'capital', 'share'];
+const SETTINGS = ['objective', 'risk', 'sellWithin', 'maxWait', 'maxActive', 'capital', 'share'];
 function query() {
   const p = new URLSearchParams({
-    objective: els.objective.value, maxWait: els.maxWait.value, sellWithin: els.sellWithin.value,
+    objective: els.objective.value, maxWait: els.maxWait.value, sellWithin: els.sellWithin.value, risk: els.risk.value,
     maxActive: els.maxActive.value, share: els.share.value, ai: els.useAI.checked ? '1' : '0',
   });
   const cap = parseGp(els.capital.value);
@@ -161,23 +161,37 @@ function renderAI() {
   const a = data.ai;
   if (!a || !data.lastRefresh) { els.aiBar.hidden = true; return; }
   els.aiBar.hidden = false;
-  const bt = a.backtest;
-  els.aiBar.className = 'ai-bar' + (a.active ? '' : ' paused');
-  let status, facts = '';
-  if (!a.on) status = 'Off: selling at 1gp under the market';
-  else if (!bt) status = 'Active · still testing itself on recent history…';
-  else if (!a.active) status = 'Paused: it did worse than plain undercutting in its latest test, so the app is undercutting by 1gp instead';
-  else status = `Active · picks sell prices from similar past charts (sell within ${dur(a.windowSec)})`;
-  if (bt) {
-    const up = bt.upliftVsUndercut * 100;
-    facts = `<div class="ai-facts">
-      <span>Backtest on <b>${bt.tests}</b> recent moments</span>
-      <span>vs undercutting: <b class="${cls(up)}">${up >= 0 ? '+' : ''}${up.toFixed(2)}%</b> per sale</span>
-      <span>beat it <b>${Math.round(bt.winRate * 100)}%</b> of the time</span>
-      <span>said it'd sell <b>${Math.round(bt.predictedFill * 100)}%</b>, actually sold <b>${Math.round(bt.actualFill * 100)}%</b></span>
-    </div>`;
-  }
-  els.aiBar.innerHTML = `<div class="ai-title">🤖 Sell-price AI</div><div class="muted">${esc(status)}</div>${facts}`;
+  els.aiBar.className = 'ai-bar' + (a.on && a.sell.active && a.buy.active ? '' : ' paused');
+  const side = (name, x, rule) => {
+    const bt = x.backtest, j = x.journal;
+    let status;
+    if (!a.on) status = `off (using ${rule})`;
+    else if (!bt) status = 'testing itself on recent history…';
+    else if (!x.active) status = `paused: lost to ${rule} in its latest test, so the app uses that instead`;
+    else status = 'active';
+    const facts = [];
+    if (bt) {
+      const up = bt.uplift * 100;
+      facts.push(`Backtest (${bt.tests} moments, ${dur(bt.windowSec)} window): <b class="${cls(up)}">${up >= 0 ? '+' : ''}${up.toFixed(2)}%</b> vs ${rule}, won <b>${Math.round(bt.winRate * 100)}%</b>, ` +
+        `said it'd fill <b>${Math.round(bt.predictedFill * 100)}%</b> → filled <b>${Math.round(bt.actualFill * 100)}%</b> · uses ${bt.k} similar charts`);
+    }
+    if (j && j.graded) {
+      const up = j.uplift * 100;
+      facts.push(`Live self-check: <b>${j.graded}</b> of its own suggestions graded on the real chart: said <b>${Math.round(j.predicted * 100)}%</b> → filled <b>${Math.round(j.actual * 100)}%</b>, ` +
+        `<b class="${cls(up)}">${up >= 0 ? '+' : ''}${up.toFixed(2)}%</b> vs ${rule}`);
+    } else if (j) {
+      facts.push(`Live self-check: ${j.recorded} suggestions recorded, first grades once their window has passed`);
+    }
+    return `<div class="ai-side"><div><b>${name}</b> <span class="muted">${esc(status)}</span></div>${facts.map((f) => `<div class="ai-fact">${f}</div>`).join('')}</div>`;
+  };
+  const cal = (a.sell.journal && a.sell.journal.calibration) || [];
+  const calRows = cal.filter((b) => b.n).map((b) => `<tr><td>${Math.round(b.lo * 100)}–${Math.round(b.hi * 100)}%</td>
+    <td class="num">${b.n}</td><td class="num">${Math.round(b.actual * 100)}%</td></tr>`).join('');
+  els.aiBar.innerHTML = `<div class="ai-title">🤖 Price AI <span class="muted small">risk: ${esc(a.risk)}</span></div>
+    <div class="ai-sides">${side('Sell prices', a.sell, 'undercutting by 1gp')}${side('Buy prices', a.buy, 'bidding 1gp over the best bid')}</div>
+    ${calRows ? `<details class="small"><summary>How well its sell predictions came true</summary>
+      <table class="cal"><thead><tr><th>It said</th><th class="num">Times</th><th class="num">Actually filled</th></tr></thead><tbody>${calRows}</tbody></table>
+      <p class="muted">The AI uses this record to correct its future predictions.</p></details>` : ''}`;
 }
 
 // Small chart of what buyers paid recently, with the AI's price and break-even.
@@ -227,10 +241,12 @@ function renderPicks() {
         <div class="stat"><b>${dur(p.seconds)}</b><span>GE wait (median)</span></div>
         <div class="stat"><b>${dur(p.activeSeconds)}</b><span>your time</span></div>
         <div class="stat"><b>${pct(p.roi)}</b><span>return</span></div>
+        <div class="stat"><b class="${cls(p.badProfit)}">${gp(p.badProfit)}</b><span>bad case (worst 10%)</span></div>
+        <div class="stat"><b>${Math.round(p.pLoss * 100)}%</b><span>chance of a loss</span></div>
       </div>
       <table class="orders"><tbody>
         ${p.inputs.map((i) => `<tr><td>BUY</td><td><span class="item">${icon(i.icon)}${esc(i.name)} ×${i.qty.toLocaleString()}</span></td>
-          <td class="num"><b>${gpExact(i.price)}</b> ea</td><td class="num muted">~${dur(i.median)}</td></tr>`).join('')}
+          <td class="num"><b>${gpExact(i.price)}</b> ea${i.ai ? `<span class="tag-ai" title="${Math.round(i.pFill * 100)}% chance it fills in time">AI</span>` : ''}</td><td class="num muted">~${dur(i.median)}</td></tr>`).join('')}
         <tr><td>SELL</td><td><span class="item">${icon(p.sell.icon)}${esc(p.sell.name)} ×${p.sell.qty.toLocaleString()}</span></td>
           <td class="num"><b>${gpExact(p.sell.price)}</b> ea${top.ai ? `<span class="tag-ai" title="${Math.round(top.ai.pFill * 100)}% chance to sell in time, from ${top.ai.neighbours} similar charts">AI</span>` : ''}</td><td class="num muted">~${dur(p.sell.median)}</td></tr>
       </tbody></table>
@@ -333,6 +349,7 @@ function sortValue(r) {
     case 'score': return r.score ?? -1;
     case 'cost': return p.cost;
     case 'sell': return p.sell.price;
+    case 'pLoss': return -p.pLoss;
     default: return p[sortKey];
   }
 }
@@ -345,7 +362,7 @@ function renderTable() {
     els.category.value = cur;
   }
   if (!data.lastRefresh) {
-    els.rows.innerHTML = '<tr><td colspan="10" class="empty">Waiting for the first price pull…</td></tr>';
+    els.rows.innerHTML = '<tr><td colspan="12" class="empty">Waiting for the first price pull…</td></tr>';
     return;
   }
   const untradeable = data.results.filter((r) => r.status === 'missing');
@@ -373,28 +390,30 @@ function renderTable() {
     th.classList.toggle('sorted', th.dataset.sort === sortKey);
     th.classList.toggle('asc', th.dataset.sort === sortKey && sortAsc);
   });
-  els.rows.innerHTML = rows.map(rowHtml).join('') || '<tr><td colspan="10" class="empty">No crafts match.</td></tr>';
+  els.rows.innerHTML = rows.map(rowHtml).join('') || '<tr><td colspan="12" class="empty">No crafts match.</td></tr>';
 }
 
 function rowHtml(r) {
   const open = expanded.has(r.id);
   const title = `<span class="item">${icon(r.icon)}<span>${esc(r.name)}${r.outputQty > 1 ? ` ×${r.outputQty}` : ''}<br><span class="cat">${esc(r.category)}</span></span></span>`;
   if (r.status !== 'ok') {
-    return `<tr class="row dim"><td>${title}</td><td colspan="9" class="muted">${esc(r.status === 'nodata' ? 'Loading price history: ' : 'Error: ')}${esc((r.missing || []).join(', '))}</td></tr>`;
+    return `<tr class="row dim"><td>${title}</td><td colspan="11" class="muted">${esc(r.status === 'nodata' ? 'Loading price history: ' : 'Error: ')}${esc((r.missing || []).join(', '))}</td></tr>`;
   }
   const p = r.plan;
-  const flags = r.flags.map((f) => `<span class="flag">${esc(f)}</span>`).join('');
+  const flags = r.flags.length ? `<div class="flagline">${r.flags.map((f) => `<span class="flag">${esc(f)}</span>`).join('')}</div>` : '';
   const score = r.score != null ? `<span class="scorebar"><i style="width:${r.score}%"></i></span>${r.score}` : '<span class="muted">–</span>';
   return `<tr class="row ${r.viable ? '' : 'dim'}" data-id="${esc(r.id)}">
     <td>${title}${flags}</td>
     <td class="num">${score}</td>
-    <td class="num">${gp(p.cost)}</td>
+    <td class="num">${gp(p.cost)}${r.aiBuys ? '<span class="tag-ai">AI</span>' : ''}</td>
     <td class="num">${gp(p.sell.price)}${r.ai ? '<span class="tag-ai">AI</span>' : ''}</td>
     <td class="num ${cls(p.profit)}"><b>${gp(p.profit)}</b></td>
     <td class="num ${cls(p.roi)}">${pct(p.roi)}</td>
     <td class="num">${dur(p.seconds)}</td>
     <td class="num">${dur(p.activeSeconds)}</td>
     <td class="num ${cls(p.profitPerActiveHour)}">${gp(p.profitPerActiveHour)}</td>
+    <td class="num ${cls(p.badProfit)}">${gp(p.badProfit)}</td>
+    <td class="num">${Math.round(p.pLoss * 100)}%</td>
     <td class="num"><button class="btn small" data-start="${esc(r.id)}">Start</button></td>
   </tr>${open ? detailHtml(r) : ''}`;
 }
@@ -413,11 +432,11 @@ function ladderHtml(title, curve, side, chosen, qty) {
 
 function detailHtml(r) {
   const p = r.plan, s = p.sell, i = r.instant;
-  return `<tr class="detail"><td colspan="10"><div class="detail">
+  return `<tr class="detail"><td colspan="12"><div class="detail">
     <p class="muted">${esc(r.skills || '')}${r.notes ? ' · ' + esc(r.notes) : ''}${r.coins ? ` · ${gpExact(r.coins)} gp fee per craft` : ''}</p>
     <p>Batch of ${r.batch}: cost ${gpExact(p.cost)} · revenue ${gpExact(p.revenue)} · tax ${gpExact(p.taxTotal)} ·
       <b class="${cls(p.profit)}">profit ${gpExact(p.profit)}</b> · buy ~${dur(p.buySeconds)}, craft ${dur(p.craftSeconds)}, sell ~${dur(s.median)}</p>
-    <p class="muted">Instant alternative (buy at the current ask, sell into the current bid): ${gpSigned(i.profit)} over ~${dur(i.seconds)}</p>
+    <p class="muted">At the last traded prices (buy at the last price buyers paid, sell at the last price sellers took; these are recent trades, not guaranteed instant fills): ${gpSigned(i.profit)}, likely ~${dur(i.seconds)}</p>
     <div class="detail-grid">
       ${ladderHtml('Sell ' + r.curves.output.name, r.curves.output, 'sell', s.price, s.qty)}
       ${r.curves.inputs.map((c, k) => ladderHtml(c.name, c, 'buy', p.inputs[k].price, p.inputs[k].qty)).join('')}
@@ -582,6 +601,7 @@ els.settingsBtn.addEventListener('click', () => {
 });
 let debounce;
 els.useAI.addEventListener('change', () => { saveSettings(); load(); });
+els.risk.addEventListener('change', () => { saveSettings(); load(); });
 for (const k of SETTINGS) {
   els[k].addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(() => { saveSettings(); load(); }, 300); });
 }

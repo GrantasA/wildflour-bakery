@@ -1,8 +1,7 @@
 'use strict';
 
 const { priceCurve, fillAt, sellOptions } = require('./market');
-const { DEFAULTS } = require('./optimizer');
-const { evaluateRecipe } = require('./optimizer');
+const { DEFAULTS, evaluateRecipe } = require('./optimizer');
 const { taxPerItem } = require('./tax');
 const { costOf, breakEvenPrice } = require('./positions');
 
@@ -12,13 +11,15 @@ const { costOf, breakEvenPrice } = require('./positions');
 // right now, then blended. A craft only tops the list if it's good on most
 // fronts, not just one.
 const METRICS = [
-  { key: 'profit', weight: 0.2, label: 'Big profit per batch', get: (r) => r.plan.profit },
-  { key: 'active', weight: 0.2, label: 'Great profit for your time', get: (r) => r.plan.profitPerActiveHour },
-  { key: 'hourly', weight: 0.15, label: 'Fast money per hour', get: (r) => r.plan.profitPerHour },
-  { key: 'roi', weight: 0.15, label: 'High return on cash', get: (r) => r.plan.roi },
+  { key: 'profit', weight: 0.15, label: 'Big profit per batch', get: (r) => r.plan.riskAdjusted },
+  { key: 'active', weight: 0.15, label: 'Great profit for your time', get: (r) => r.plan.profitPerActiveHour },
+  { key: 'hourly', weight: 0.1, label: 'Fast money per hour', get: (r) => r.plan.profitPerHour },
+  { key: 'roi', weight: 0.1, label: 'High return on cash', get: (r) => r.plan.roi },
+  { key: 'risk', weight: 0.2, label: 'Low risk of a loss', get: (r) => -r.plan.pLoss },
   { key: 'speed', weight: 0.1, label: 'Quick cycle', get: (r) => -r.plan.seconds },
   { key: 'safety', weight: 0.15, label: 'Reliable fills', get: (r) => -worstP90(r.plan) },
-  { key: 'liquid', weight: 0.05, label: 'Liquid market', get: (r) => (r.flags.some((f) => f.startsWith('thin')) ? 0 : 1) },
+  { key: 'liquid', weight: 0.05, label: 'Liquid market',
+    get: (r) => (r.flags.some((f) => f.startsWith('thin')) || (r.warnings || []).some((w) => w.kind === 'thin') ? 0 : 1) },
 ];
 
 function worstP90(plan) {
@@ -26,8 +27,10 @@ function worstP90(plan) {
 }
 
 function rankCrafts(results, maxActiveMinutes) {
+  // Never recommend a craft whose price looks like a spike, crash or manipulation.
   const pool = results.filter((r) => r.status === 'ok' && r.viable &&
-    r.plan.activeSeconds <= maxActiveMinutes * 60);
+    r.plan.activeSeconds <= maxActiveMinutes * 60 &&
+    !(r.warnings || []).some((w) => w.kind === 'spike' || w.kind === 'crash'));
   if (!pool.length) return [];
   const ranks = new Map(pool.map((r) => [r, {}]));
   for (const m of METRICS) {
@@ -68,8 +71,27 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
       const item = getItem(inp.name);
       if (!item) return { kind: 'info', text: 'No price data' };
       const cur = fillAt(item, 'buy', inp.qty, inp.offerPrice, opts);
-      const pts = priceCurve(item, 'buy', inp.qty, opts).points;
       checkIn = Math.min(checkIn, Math.max(120, cur.median / 4));
+      // time left for this offer: its own planned window since it was (re)placed
+      const left = inp.windowSec
+        ? Math.max(MIN_BUDGET, (inp.placedAt + inp.windowSec * 1000 - now) / 1000) : remaining;
+      const ai = opts.buyAdvisor ? opts.buyAdvisor(item, inp.qty, left) : null;
+      if (ai) {
+        // Re-offering loses your place in the queue, so only move for a real saving.
+        const atOffer = nearest(ai.curve, inp.offerPrice);
+        const saving = inp.qty * (atOffer.ev - ai.expected);
+        const worth = saving > Math.max(1000, 0.002 * inp.offerPrice * inp.qty);
+        if (worth && ai.price !== inp.offerPrice) {
+          const kind = ai.price > inp.offerPrice ? 'raise' : 'lower';
+          return { kind, price: ai.price, median: ai.median, ai: true,
+            text: `AI: ${kind} to ${fmt(ai.price)}. ${Math.round(ai.pFill * 100)}% chance it fills in the ~${dur(left)} left ` +
+              `(at ${fmt(inp.offerPrice)}: ${Math.round(atOffer.pFill * 100)}%). Expected ~${fmt(saving)} cheaper overall, ` +
+              `counting the cost of buying at market if it doesn't fill.` };
+        }
+        return { kind: 'keep', median: cur.median, ai: true,
+          text: `Keep it. ${Math.round(atOffer.pFill * 100)}% chance it fills in the ~${dur(left)} left; the AI doesn't see a cheaper plan.` };
+      }
+      const pts = priceCurve(item, 'buy', inp.qty, opts).points;
       if (!pts.length) return { kind: 'keep', text: 'Not enough trade history to advise', median: cur.median };
       const fits = pts.filter((p) => p.median <= remaining);
       const target = fits.length ? fits[fits.length - 1] : pts[0];
@@ -118,8 +140,9 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
     const quick = pts.length ? pts[0] : best;
     const ai = opts.sellAdvisor ? opts.sellAdvisor(output, pos.sell.qty, opts.sellWithinHours * 3600) : null;
     if (ai) {
-      const p = pos.sell.qty * ai.expectedNet - cost;
-      const vsUndercut = pos.sell.qty * (ai.expectedNet - ai.undercut.expectedNet);
+      const p = pos.sell.qty * ai.expected - cost;
+      const badP = pos.sell.qty * ai.bad - cost;
+      const vsUndercut = pos.sell.qty * (ai.expected - ai.rule.expected);
       return {
         kind: 'list', price: ai.price, median: ai.median, breakEven, ai,
         quick: { price: quick.price, median: quick.median, profit: profitAt(quick.price) },
@@ -128,7 +151,8 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
           `${Math.round(ai.pFill * 100)}% chance it sells within ${dur(ai.windowSec)}` +
           (Number.isFinite(ai.median) ? ` (typically ~${dur(ai.median)})` : '') +
           `, based on ${ai.neighbours} similar charts. Expected profit ~${fmt(p)}` +
-          (Math.abs(vsUndercut) >= 1 ? `, ${vsUndercut >= 0 ? '+' : ''}${fmt(vsUndercut)} vs undercutting by 1gp.` : '.') +
+          (Math.abs(vsUndercut) >= 1 ? `, ${vsUndercut >= 0 ? '+' : ''}${fmt(vsUndercut)} vs undercutting by 1gp` : '') +
+          `. Bad case (worst 20%): ~${fmt(badP)}.` +
           (ai.price < breakEven ? ` That's under break-even (${fmt(breakEven)}): similar charts mostly fell.` : ''),
       };
     }
@@ -156,7 +180,7 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
       base.ai = ai;
       // Relisting loses your place in the queue, so only move for a real gain.
       const curNet = aiNetAt(ai, offer);
-      const gain = pos.sell.qty * (ai.expectedNet - curNet);
+      const gain = pos.sell.qty * (ai.expected - curNet);
       const worth = gain > Math.max(1000, 0.002 * offer * pos.sell.qty);
       if (worth && ai.price !== offer) {
         const kind = ai.price < offer ? 'lower' : 'raise';
@@ -188,16 +212,17 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
   return null;
 }
 
-// Expected net per unit if you stay listed at `price`: the AI's neighbours say
-// how likely that is to fill. Approximated by the undercut/best points.
+// The AI's evaluated point closest to `price` (expected value and fill chance
+// if you keep your offer where it is).
+function nearest(curve, price) {
+  let best = curve[0];
+  for (const p of curve) if (Math.abs(p.price - price) < Math.abs(best.price - price)) best = p;
+  return best;
+}
+
 function aiNetAt(ai, price) {
-  if (price === ai.price) return ai.expectedNet;
-  if (ai.curve) {
-    let bestPt = ai.curve[0];
-    for (const p of ai.curve) if (Math.abs(p.price - price) < Math.abs(bestPt.price - price)) bestPt = p;
-    return bestPt.ev;
-  }
-  return ai.undercut.expectedNet;
+  if (price === ai.price) return ai.expected;
+  return ai.curve && ai.curve.length ? nearest(ai.curve, price).ev : ai.rule.expected;
 }
 
 function fmt(n) {

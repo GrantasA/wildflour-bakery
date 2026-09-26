@@ -52,6 +52,8 @@ class PositionStore {
         const price = validPrice(prices && prices[i]) || inp.price;
         return {
           name: inp.name, qty: inp.qty, offerPrice: price, placedAt: now,
+          // how long this offer was planned to take (the AI window it was priced for)
+          windowSec: inp.windowSec || plan.buySeconds,
           bought: !!bought, boughtPrice: bought ? price : null,
         };
       }),

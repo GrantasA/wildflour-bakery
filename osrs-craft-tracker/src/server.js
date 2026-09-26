@@ -7,7 +7,9 @@ const { PriceStore } = require('./prices');
 const { evaluateRecipe, DEFAULTS } = require('./optimizer');
 const { PositionStore, stats } = require('./positions');
 const { rankCrafts, advise } = require('./copilot');
-const { SellAI } = require('./ai');
+const { PriceAI } = require('./ai');
+const { Journal } = require('./journal');
+const { RISK_LEVELS } = require('./risk');
 
 const PORT = Number(process.env.PORT) || 3000;
 // The page can create and edit your trades, so only listen on this machine.
@@ -27,14 +29,16 @@ const USER_AGENT = process.env.OSRS_USER_AGENT ||
 const fetchImpl = MOCK ? require('./mock').createMockFetch(() => loadRecipes().recipes) : globalThis.fetch;
 const store = new PriceStore({ userAgent: USER_AGENT, fetchImpl });
 const positions = new PositionStore(POSITIONS_FILE);
-const sellAI = new SellAI();
+const priceAI = new PriceAI();
+const DATA_DIR = path.dirname(POSITIONS_FILE);
+const journal = new Journal(DATA_DIR, MOCK ? '-mock' : '');
 
-// ---- sell-price AI plumbing ----
+// ---- price AI plumbing ----
 // Windows are snapped to a few sizes so the AI's training sets can be reused.
-const AI_WINDOWS = [0.5, 1, 2, 4, 6, 12, 24, 48].map((h) => h * 3600);
+const AI_WINDOWS = [0.5, 1, 2, 4, 8, 12, 24, 48].map((h) => h * 3600);
 const snapWindow = (sec) => AI_WINDOWS.find((w) => w >= sec) || AI_WINDOWS[AI_WINDOWS.length - 1];
-const aiWindowsInUse = new Set([2 * 3600]);
-const backtests = new Map(); // windowSec -> result
+const aiWindowsInUse = { sell: new Set([2 * 3600]), buy: new Set([4 * 3600]) };
+const backtests = { sell: new Map(), buy: new Map() }; // side -> windowSec -> result
 
 let aiItemsCache = { version: -1, items: [] };
 function aiItems() {
@@ -45,17 +49,26 @@ function aiItems() {
   return aiItemsCache.items;
 }
 
-function sellAdvisorFor(settings) {
+// Safety switch: if the AI did worse than the simple rule in its latest
+// backtest for this side and window, don't use it there.
+const aiAllowed = (side, w) => {
+  const bt = backtests[side].get(w);
+  return !(bt && bt.uplift < 0);
+};
+
+function advisorFor(settings, side) {
   if (!settings.useAI) return null;
   return (item, qty, windowSec) => {
     const w = snapWindow(windowSec);
-    aiWindowsInUse.add(w);
-    const bt = backtests.get(w);
-    // Safety switch: if the AI lost to plain undercutting in its latest
-    // backtest, don't use it for this window.
-    if (bt && bt.upliftVsUndercut < 0) return null;
+    aiWindowsInUse[side].add(w);
+    if (!aiAllowed(side, w)) return null;
     try {
-      return sellAI.suggest(aiItems(), store.version, item, qty, w, settings.share);
+      const s = priceAI.suggest(aiItems(), store.version, item, qty, w, settings.share, {
+        side, riskAversion: settings.riskAversion, calibrate: journal.calibrator(side),
+      });
+      // Write it down so it can be graded against the real chart later.
+      if (s) journal.record({ item: item.name, windowSec: w, qty, share: settings.share, suggestion: s });
+      return s;
     } catch (e) {
       logError('ai', e);
       return null;
@@ -63,17 +76,32 @@ function sellAdvisorFor(settings) {
   };
 }
 
+function gradeJournal() {
+  try {
+    const n = journal.grade((name, windowSec) => {
+      const it = store.getItem(name);
+      if (!it) return null;
+      return windowSec <= 6 * 3600 ? it.series5m : it.series1h;
+    });
+    if (n) resultsCache.clear();
+  } catch (e) {
+    logError('journal', e);
+  }
+}
+
 let backtesting = false;
 function runBacktests() {
   if (backtesting || !state.lastRefresh) return;
   backtesting = true;
-  const windows = [...aiWindowsInUse];
+  const jobs = [];
+  for (const side of ['sell', 'buy']) for (const w of aiWindowsInUse[side]) jobs.push([side, w]);
   const next = () => {
-    const w = windows.shift();
-    if (w == null) { backtesting = false; resultsCache.clear(); return; }
+    const job = jobs.shift();
+    if (!job) { backtesting = false; resultsCache.clear(); return; }
+    const [side, w] = job;
     try {
-      const res = sellAI.runBacktest(aiItems(), store.version, w, DEFAULTS.share);
-      if (res) backtests.set(w, res);
+      const res = priceAI.runBacktest(aiItems(), store.version, w, DEFAULTS.share, { side });
+      if (res) backtests[side].set(w, res);
     } catch (e) {
       logError('ai backtest', e);
     }
@@ -167,17 +195,20 @@ async function refresh() {
       state.lastHourly = now;
     }
     state.lastRefresh = Date.now();
+    gradeJournal();
   } catch (e) {
     logError('refresh', e);
   }
   state.nextRefresh = Date.now() + REFRESH_MS;
   resultsCache.clear();
+  if (lastSettings) setImmediate(() => { try { computeResults(lastSettings); } catch (e) { logError('warm', e); } });
   backfillPending().then(() => {
-    if (!backtests.size) runBacktests();
+    if (!backtests.sell.size) runBacktests();
   }).catch((e) => logError('backfill', e));
 }
 
 const resultsCache = new Map();
+let lastSettings = null; // warm the cache for these right after each refresh
 function parseSettings(q) {
   const num = (v, d, lo, hi) => {
     const n = Number(v);
@@ -191,16 +222,19 @@ function parseSettings(q) {
     maxActive: num(q.get('maxActive'), 15, 0.5, 24 * 60),
     sellWithinHours: num(q.get('sellWithin'), DEFAULTS.sellWithinHours, 0.05, 24 * 7),
     useAI: q.get('ai') !== '0',
+    risk: RISK_LEVELS[q.get('risk')] != null ? q.get('risk') : 'balanced',
+    riskAversion: RISK_LEVELS[q.get('risk')] ?? RISK_LEVELS.balanced,
   };
 }
 
 function computeResults(settings) {
+  lastSettings = settings;
   const key = JSON.stringify(settings) + ':' + store.version + ':' + recipesCache.mtime;
   if (resultsCache.has(key)) return resultsCache.get(key);
-  const advisor = sellAdvisorFor(settings);
+  const ai = { sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') };
   const results = loadRecipes().recipes.map((r) => {
     try {
-      return evaluateRecipe(r, (n) => store.getItem(n), { ...settings, sellAdvisor: advisor });
+      return evaluateRecipe(r, (n) => store.getItem(n), { ...settings, ...ai });
     } catch (e) {
       logError(`recipe ${r.id}`, e);
       return { id: r.id, name: r.output.item, category: r.category, status: 'error', missing: [e.message] };
@@ -213,13 +247,17 @@ function computeResults(settings) {
 }
 
 function aiStatus(settings) {
-  const w = snapWindow(settings.sellWithinHours * 3600);
-  const bt = backtests.get(w) || null;
+  const sellW = snapWindow(settings.sellWithinHours * 3600);
+  const buyBts = [...backtests.buy.values()];
+  // for buying, report the window it's used most for: the longest tested one within max wait
+  const buyBt = buyBts.filter((b) => b.windowSec <= settings.maxWaitHours * 3600).sort((a, b) => b.windowSec - a.windowSec)[0] || buyBts[0] || null;
   return {
     on: settings.useAI,
-    windowSec: w,
-    backtest: bt,
-    active: settings.useAI && !(bt && bt.upliftVsUndercut < 0),
+    risk: settings.risk,
+    sell: { windowSec: sellW, backtest: backtests.sell.get(sellW) || null, active: settings.useAI && aiAllowed('sell', sellW),
+      journal: journal.stats('sell') },
+    buy: { windowSec: buyBt ? buyBt.windowSec : null, backtest: buyBt, active: settings.useAI && (!buyBt || buyBt.uplift >= 0),
+      journal: journal.stats('buy') },
   };
 }
 
@@ -232,7 +270,7 @@ function positionsView(settings) {
   return positions.list().map((p) => {
     if (!['buying', 'ready', 'selling'].includes(p.status) || !state.lastRefresh) return p;
     try {
-      return { ...p, advice: advise(p, recipeById(p.recipeId), getItem, { ...settings, sellAdvisor: sellAdvisorFor(settings) }) };
+      return { ...p, advice: advise(p, recipeById(p.recipeId), getItem, { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') }) };
     } catch (e) {
       logError(`advice ${p.id}`, e);
       return { ...p, advice: { kind: 'info', text: 'Could not compute advice: ' + e.message } };
@@ -267,7 +305,9 @@ async function handlePositions(req, res, url) {
     const recipe = recipeById(body.recipeId);
     if (!recipe) return sendJson(res, 400, { error: 'Unknown craft' });
     const batch = Math.max(1, Math.min(1_000_000, Math.round(Number(body.batch)) || 0)) || undefined;
-    const r = evaluateRecipe(batch ? { ...recipe, batch } : recipe, (n) => store.getItem(n), settings);
+    // Plan with the same AI advisors the advice uses, so the two agree.
+    const r = evaluateRecipe(batch ? { ...recipe, batch } : recipe, (n) => store.getItem(n),
+      { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') });
     if (r.status !== 'ok') return sendJson(res, 400, { error: 'No price data for this craft yet' });
     const pos = positions.create({ recipe, batch: r.batch, plan: r.plan, prices: body.prices, bought: !!body.bought });
     return sendJson(res, 200, pos);
@@ -322,3 +362,6 @@ server.listen(PORT, HOST, () => {
   refresh();
   setInterval(refresh, REFRESH_MS);
 });
+
+// Exit cleanly on Ctrl+C / kill so any pending output is flushed.
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(0));

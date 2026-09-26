@@ -34,6 +34,13 @@
         <option value="profit">Biggest profit per batch</option>
       </select>
     </label>
+    <label title="How much the bad case counts when picking crafts and prices">Risk
+      <select id="risk">
+        <option value="careful">Careful: avoid bad outcomes</option>
+        <option value="balanced" selected>Balanced</option>
+        <option value="bold">Bold: chase the average</option>
+      </select>
+    </label>
     <label title="Longest a whole cycle (buy + craft + sell) may take">Max GE wait (hours)
       <input id="maxWait" type="number" min="0.1" step="1" value="24">
     </label>
@@ -102,6 +109,8 @@
               <th data-sort="hours" class="num" title="Median time for the whole cycle, mostly GE waiting">GE wait</th>
               <th data-sort="activeSeconds" class="num" title="Your hands-on time: crafting + placing offers">Your time</th>
               <th data-sort="profitPerActiveHour" class="num" title="Profit per hour of your hands-on time">Profit / your hr</th>
+              <th data-sort="badProfit" class="num" title="Profit in the worst 10% of cases, if prices move against you while you buy, craft and sell">Bad case</th>
+              <th data-sort="pLoss" class="num" title="Chance the batch ends in a loss (sorted safest first)">Loss risk</th>
               <th></th>
             </tr>
           </thead>

@@ -252,3 +252,15 @@ footer { max-width: 1320px; margin: 0 auto; padding: 4px 16px 28px; color: var(-
 .spark .s-be { stroke: var(--bad); stroke-width: 1; stroke-dasharray: 2 3; }
 .spark text { font-size: 10px; fill: var(--muted); }
 .spark text.s-ai-label { fill: var(--warn); font-weight: 700; }
+.ai-bar { flex-direction: column; align-items: stretch; }
+.ai-sides { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px 20px; }
+.ai-side { display: flex; flex-direction: column; gap: 3px; }
+.ai-fact { color: var(--text-2); font-size: 12px; }
+.ai-fact b { color: var(--text); }
+.ai-bar details summary { cursor: pointer; color: var(--muted); }
+table.cal { width: auto; margin-top: 6px; }
+table.cal td, table.cal th { padding: 3px 10px; }
+.flagline { white-space: normal; max-width: 360px; display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.flagline .flag { margin-left: 0; }
+.stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 560px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

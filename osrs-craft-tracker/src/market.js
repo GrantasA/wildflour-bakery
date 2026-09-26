@@ -227,8 +227,8 @@ function fillAt(item, side, qty, price, opts) {
 // cheapest seller) and only prices that should sell within the sell window
 // even in the slow case (p90), not just on a lucky day. Sorted fastest first.
 const MARKET_FRESH_SECONDS = 2 * 3600;
-function sellOptions(item, qty, opts, windowSec = (opts.sellWithinHours ?? 2) * 3600, nowSec = Date.now() / 1000) {
-  const curve = priceCurve(item, 'sell', qty, opts);
+function sellOptions(item, qty, opts, windowSec = (opts.sellWithinHours ?? 2) * 3600, nowSec = Date.now() / 1000, curve = null) {
+  curve = curve || priceCurve(item, 'sell', qty, opts);
   const all = curve.points;
   const l = item.latest || {};
   const cap = l.high && nowSec - (l.highTime || 0) <= MARKET_FRESH_SECONDS ? Math.max(1, l.high - 1) : Infinity;

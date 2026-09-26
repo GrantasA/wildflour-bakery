@@ -52,19 +52,24 @@ class PositionStore {
         const price = validPrice(prices && prices[i]) || inp.price;
         return {
           name: inp.name, qty: inp.qty, offerPrice: price, placedAt: now,
+          // what we predicted (before any learned timing correction), to learn from later;
+          // only when you use the suggested price
+          predictedSec: !bought && !validPrice(prices && prices[i]) ? inp.median / (plan.timeFactor || 1) : null,
           // how long this offer was planned to take (the AI window it was priced for)
           windowSec: inp.windowSec || plan.buySeconds,
           bought: !!bought, boughtPrice: bought ? price : null,
         };
       }),
-      sell: { name: plan.sell.name, qty: plan.sell.qty, offerPrice: null, placedAt: null, soldPrice: null },
+      sell: { name: plan.sell.name, qty: plan.sell.qty, offerPrice: null, placedAt: null, soldPrice: null, predictedSec: null },
     };
     this.positions.unshift(pos);
     this.save();
     return pos;
   }
 
-  act(id, { action, index, price }, now = Date.now()) {
+  // predictedSec: how long we predicted this offer would take at this price
+  // (null when you picked your own price), used to learn real fill times.
+  act(id, { action, index, price, predictedSec = null }, now = Date.now()) {
     const pos = this.get(id);
     if (!pos) throw httpError(404, 'No such trade');
     if (action === 'delete') {
@@ -80,11 +85,13 @@ class PositionStore {
         if (pos.status !== 'buying' || !inp || inp.bought || !p) throw httpError(400, 'Cannot reprice');
         inp.offerPrice = p;
         inp.placedAt = now;
+        inp.predictedSec = predictedSec;
         break;
       case 'bought':
         if (pos.status !== 'buying' || !inp) throw httpError(400, 'Cannot mark bought');
         inp.bought = true;
         inp.boughtPrice = p || inp.offerPrice;
+        inp.boughtAt = now;
         if (pos.inputs.every((i) => i.bought)) pos.status = 'ready';
         break;
       case 'list':
@@ -92,12 +99,14 @@ class PositionStore {
         pos.status = 'selling';
         pos.sell.offerPrice = p;
         pos.sell.placedAt = now;
+        pos.sell.predictedSec = predictedSec;
         break;
       case 'sold': {
         if (pos.status !== 'selling' && pos.status !== 'ready') throw httpError(400, 'Nothing to sell');
         const sp = p || pos.sell.offerPrice;
         if (!sp) throw httpError(400, 'Sale price needed');
         pos.sell.soldPrice = sp;
+        pos.sell.soldAt = now;
         pos.status = 'done';
         pos.closedAt = now;
         Object.assign(pos, settle(pos));
@@ -155,6 +164,30 @@ function stats(positions) {
   };
 }
 
+// How much longer (or shorter) your real offers take than predicted.
+// Each offer you place at a suggested price and later mark Bought / Sold is a
+// sample: actual time / predicted time. The typical ratio (geometric mean,
+// pulled towards 1 while there are only a few samples) becomes a factor that
+// every time estimate is multiplied by.
+const TIMING_PRIOR = 3;
+function timingFactor(positions) {
+  const ratios = [];
+  const add = (placedAt, doneAt, predicted) => {
+    if (!placedAt || !doneAt || !predicted || !Number.isFinite(predicted)) return;
+    const actual = (doneAt - placedAt) / 1000;
+    ratios.push(Math.max(actual, 60) / Math.max(predicted, 60));
+  };
+  for (const p of positions) {
+    for (const i of p.inputs || []) if (i.bought) add(i.placedAt, i.boughtAt, i.predictedSec);
+    if (p.sell && p.sell.soldAt) add(p.sell.placedAt, p.sell.soldAt, p.sell.predictedSec);
+  }
+  if (!ratios.length) return { factor: 1, samples: 0, raw: null };
+  const logs = ratios.map(Math.log);
+  const factor = Math.exp(logs.reduce((a, v) => a + v, 0) / (ratios.length + TIMING_PRIOR));
+  const raw = Math.exp(logs.reduce((a, v) => a + v, 0) / ratios.length);
+  return { factor: Math.min(20, Math.max(0.5, factor)), samples: ratios.length, raw };
+}
+
 function validPrice(v) {
   const n = Math.round(Number(v));
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -166,4 +199,4 @@ function httpError(status, message) {
   return e;
 }
 
-module.exports = { PositionStore, costOf, settle, breakEvenPrice, stats };
+module.exports = { PositionStore, costOf, settle, breakEvenPrice, stats, timingFactor };

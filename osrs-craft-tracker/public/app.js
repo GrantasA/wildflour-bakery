@@ -218,8 +218,12 @@ function renderAI() {
   const mem = data.memory;
   const memLine = mem ? `<div class="ai-fact">Memory: <b>${mem.days5m.toFixed(1)}</b> days of 5-minute history, <b>${mem.days1h.toFixed(1)}</b> days hourly, ` +
     `<b>${mem.ticks.toLocaleString()}</b> exact trade prices captured. It keeps growing while the app runs (up to 7 days / 60 days).</div>` : '';
+  const t = data.timing;
+  const timeLine = t && t.samples
+    ? `<div class="ai-fact">Timing check: your last <b>${t.samples}</b> fills took <b>${t.raw.toFixed(1)}×</b> as long as predicted, so every time estimate is now multiplied by <b>${t.factor.toFixed(2)}×</b> (this moves closer to ${t.raw.toFixed(1)}× as more of your fills come in).</div>`
+    : `<div class="ai-fact">Timing check: click <b>Bought</b> / <b>Sold</b> as soon as your offers fill, and the app learns how long they really take for you and corrects its time estimates.</div>`;
   els.aiBar.innerHTML = `<div class="ai-title">🤖 Price AI <span class="muted small">risk: ${esc(a.risk)}</span></div>
-    ${memLine}
+    ${memLine}${timeLine}
     <div class="ai-sides">${side('Sell prices', a.sell, 'undercutting by 1gp')}${side('Buy prices', a.buy, 'bidding 1gp over the best bid')}</div>
     ${calRows ? `<details class="small"><summary>How well its sell predictions came true</summary>
       <table class="cal"><thead><tr><th>It said</th><th class="num">Times</th><th class="num">Actually filled</th></tr></thead><tbody>${calRows}</tbody></table>

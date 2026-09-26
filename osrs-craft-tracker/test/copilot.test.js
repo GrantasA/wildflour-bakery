@@ -127,3 +127,37 @@ test('picks rank by gp/h and skip what you cannot afford or what clashes with op
   assert.deepStrictEqual(ranked.map((r) => r.id), ['c', 'a']);
   assert.strictEqual(ranked[0].score, 100);
 });
+
+test('learns real fill times: offers that took longer than predicted stretch every estimate', () => {
+  const { timingFactor } = require('../src/positions');
+  const t0 = 1_000_000_000_000;
+  // three buys predicted at 10 minutes that really took 3 hours
+  const pos = { inputs: [0, 1, 2].map(() => ({ bought: true, placedAt: t0, boughtAt: t0 + 3 * 3600e3, predictedSec: 600 })),
+    sell: { placedAt: null } };
+  const t = timingFactor([pos]);
+  assert.strictEqual(t.samples, 3);
+  assert.ok(Math.abs(t.raw - 18) < 1e-9);
+  assert.ok(t.factor > 3 && t.factor < 18, `shrunk towards 1 while samples are few: ${t.factor}`);
+  // estimates in a plan get stretched by the factor
+  const r1 = evaluateRecipe(recipe, getItem, opts);
+  const r2 = evaluateRecipe(recipe, getItem, { ...opts, timeFactor: t.factor });
+  assert.ok(Math.abs(r2.plan.sell.median - r1.plan.sell.median * t.factor) < 1e-6);
+  assert.ok(r2.plan.hours > r1.plan.hours * 2);
+  // your own custom prices teach nothing
+  assert.strictEqual(timingFactor([{ inputs: [{ bought: true, placedAt: t0, boughtAt: t0 + 1e6, predictedSec: null }] }]).samples, 0);
+});
+
+test('trade lifecycle records when offers filled', () => {
+  const store = new PositionStore(tmpFile());
+  const r = evaluateRecipe(recipe, getItem, opts);
+  const pos = store.create({ recipe, batch: r.batch, plan: r.plan, now: 1000 });
+  assert.ok(pos.inputs.every((i) => i.predictedSec > 0), 'suggested prices carry a prediction');
+  store.act(pos.id, { action: 'bought', index: 0 }, 5000);
+  assert.strictEqual(store.get(pos.id).inputs[0].boughtAt, 5000);
+  store.act(pos.id, { action: 'bought', index: 1 }, 6000);
+  store.act(pos.id, { action: 'list', price: 2000, predictedSec: 1200 }, 7000);
+  store.act(pos.id, { action: 'sold', price: 2000 }, 9000);
+  const done = store.get(pos.id);
+  assert.strictEqual(done.sell.soldAt, 9000);
+  assert.strictEqual(done.sell.predictedSec, 1200);
+});

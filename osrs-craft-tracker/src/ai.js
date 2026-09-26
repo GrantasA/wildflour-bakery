@@ -217,19 +217,27 @@ function future(s, t, H) {
 
 // Seconds until an offer at relative price x fills `need` units, or Infinity.
 // A sell fills from trades at >= x, a buy from trades at <= x.
+// A bucket's trades are spread around its average price, so only part of its
+// volume traded at or better than x: about half when x equals the average,
+// all of it once x is 1% better, none once it's 1% worse.
+const SPREAD_LOG = 0.01;
 function fillTime(fut, x, need, share, step, side = 'sell') {
   let cum = 0;
   const ok = side === 'sell' ? (v) => v >= x : (v) => v <= x;
-  const ticks = (arr, cap) => {
+  const frac = side === 'sell'
+    ? (v) => (Number.isNaN(v) ? 0 : clamp(0.5 + (v - x) / (2 * SPREAD_LOG), 0, 1))
+    : (v) => (Number.isNaN(v) ? 0 : clamp(0.5 + (x - v) / (2 * SPREAD_LOG), 0, 1));
+  const ticks = (arr) => {
     if (!arr) return 0;
     let n = 0;
     for (const [v, c] of arr) if (ok(v)) n += c;
-    return Math.min(cap, n);
+    return n;
   };
   for (let k = 0; k < fut.relHi.length; k++) {
-    // bucket average qualifies -> its whole volume; otherwise any exact trades that did
-    const v = share * ((ok(fut.relHi[k]) ? fut.hv[k] : ticks(fut.hiT[k], fut.hv[k])) +
-      (ok(fut.relLo[k]) ? fut.lv[k] : ticks(fut.loT[k], fut.lv[k])));
+    // the share of each bucket's volume at or better than x, or, if more,
+    // the exact trades we captured at or better than x
+    const part = (rel, vol, t) => Math.min(vol, Math.max(vol * frac(rel), ticks(t)));
+    const v = share * (part(fut.relHi[k], fut.hv[k], fut.hiT[k]) + part(fut.relLo[k], fut.lv[k], fut.loT[k]));
     if (cum + v >= need) return (k + (v > 0 ? (need - cum) / v : 1)) * step;
     cum += v;
   }
@@ -363,7 +371,7 @@ class PriceAI {
       const key = row.si * 100000 + row.t;
       let fut = ds.futMemo.get(key);
       if (!fut) { fut = future(s, row.t, ds.H); ds.futMemo.set(key, fut); }
-      return { fut, need: qtyRel * s.typVol, w: 1 / (1 + Math.sqrt(dist)) };
+      return { fut, need: qtyRel * s.typVol, typVol: s.typVol, w: 1 / (1 + Math.sqrt(dist)) };
     });
     const wsum = futs.reduce((a, n) => a + n.w, 0);
     const sell = side === 'sell';
@@ -414,11 +422,23 @@ class PriceAI {
       const score = sell ? ev - riskAversion * (ev - bad) : -(ev + riskAversion * (bad - ev));
       return { x, price: price(x), ev, bad, score, pFill, pRaw };
     };
+    // Honest completion times. If the offer hasn't filled by the end of the
+    // window you still have to trade at the market, and that isn't instant
+    // either: it takes about as long as the market needs to move your
+    // quantity (your share of the usual volume on that side).
+    const windowSec = ds.H * ds.step;
     const withTimes = (r) => {
-      const times = futs.map((n) => fillTime(n.fut, r.x, n.need, share, ds.step, side)).filter(Number.isFinite).sort((a, b) => a - b);
+      const filled = [];
+      const all = futs.map((n) => {
+        const t = fillTime(n.fut, r.x, n.need, share, ds.step, side);
+        if (Number.isFinite(t)) { filled.push(t); return t; }
+        return windowSec + (n.need / Math.max(1e-6, share * n.typVol / 2)) * ds.step;
+      }).sort((a, b) => a - b);
+      filled.sort((a, b) => a - b);
+      const q = (arr, p) => (arr.length ? arr[Math.min(arr.length - 1, Math.floor(arr.length * p))] : Infinity);
       return { ...r,
-        median: times.length ? times[Math.floor(times.length / 2)] : Infinity,
-        p90: times.length ? times[Math.min(times.length - 1, Math.floor(times.length * 0.9))] : Infinity };
+        median: q(all, 0.5), p90: q(all, 0.9),       // including the go-to-market fallback
+        fillMedian: q(filled, 0.5) };                  // when the offer itself fills
     };
     let best = null;
     const curve = [];
@@ -477,8 +497,9 @@ class PriceAI {
       price: d.best.price,
       pFill: d.best.pFill,
       pRaw: d.best.pRaw,
-      median: d.best.median,
+      median: d.best.median,        // expected time to be done, incl. going to market if it doesn't fill
       p90: d.best.p90,
+      fillMedian: d.best.fillMedian, // typical time when the offer itself fills
       expected: d.best.ev,  // sell: expected net per unit; buy: expected cost per unit
       bad: d.best.bad,      // average of the worst 20% of outcomes
       riskAversion,

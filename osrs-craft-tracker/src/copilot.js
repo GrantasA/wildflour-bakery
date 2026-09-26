@@ -61,6 +61,15 @@ const MIN_BUDGET = 120; // never plan on less than 2 minutes left
 
 function advise(pos, recipe, getItem, settings, now = Date.now()) {
   const opts = { ...DEFAULTS, ...settings };
+  // every time shown is corrected by what your real fills have taught us
+  const tf = opts.timeFactor || 1;
+  const scale = (a) => a && { ...a, median: a.median * tf, p90: a.p90 * tf,
+    fillMedian: a.fillMedian != null ? a.fillMedian * tf : a.fillMedian };
+  for (const k of ['buyAdvisor', 'sellAdvisor']) {
+    const f = opts[k];
+    if (f) opts[k] = (...args) => scale(f(...args));
+  }
+  const fillAtS = (...args) => { const r = fillAt(...args); return { median: r.median * tf, p90: r.p90 * tf }; };
   if (!recipe) return { kind: 'info', text: 'Recipe no longer exists in recipes.json.' };
   const fresh = evaluateRecipe({ ...recipe, batch: pos.batch }, getItem, opts);
   const output = getItem(pos.sell.name);
@@ -74,7 +83,7 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
       if (inp.bought) return { kind: 'done', text: `Bought at ${fmt(inp.boughtPrice)}` };
       const item = getItem(inp.name);
       if (!item) return { kind: 'info', text: 'No price data' };
-      const cur = fillAt(item, 'buy', inp.qty, inp.offerPrice, opts);
+      const cur = fillAtS(item, 'buy', inp.qty, inp.offerPrice, opts);
       checkIn = Math.min(checkIn, Math.max(120, cur.median / 4));
       // time left for this offer: its own planned window since it was (re)placed
       const left = inp.windowSec
@@ -100,12 +109,12 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
       const fits = pts.filter((p) => p.median <= remaining);
       const target = fits.length ? fits[fits.length - 1] : pts[0];
       if (target.price > inp.offerPrice && cur.median > remaining * 1.25) {
-        return { kind: 'raise', price: target.price, median: target.median,
+        return { kind: 'raise', price: target.price, median: target.median * tf,
           text: `Raise to ${fmt(target.price)}. At ${fmt(inp.offerPrice)} it's likely to take ~${dur(cur.median)}; you planned ~${dur(remaining)} more.` };
       }
       const saving = (inp.offerPrice - target.price) * inp.qty;
       if (target.price < inp.offerPrice * 0.99 && target.median <= remaining) {
-        return { kind: 'lower', price: target.price, median: target.median,
+        return { kind: 'lower', price: target.price, median: target.median * tf,
           text: `Price dipped. Re-offer at ${fmt(target.price)} to save ~${fmt(saving)} and still fill in ~${dur(target.median)}.` };
       }
       return { kind: 'keep', median: cur.median, text: `Keep it. Likely fills in ~${dur(cur.median)}.` };
@@ -162,7 +171,7 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
     }
     const p = profitAt(best.price);
     return {
-      kind: 'list', price: best.price, median: best.median, breakEven,
+      kind: 'list', price: best.price, median: best.median * tf, breakEven,
       quick: { price: quick.price, median: quick.median, profit: profitAt(quick.price) },
       projectedProfit: p,
       text: p >= 0
@@ -175,7 +184,7 @@ function advise(pos, recipe, getItem, settings, now = Date.now()) {
 
   if (pos.status === 'selling') {
     const offer = pos.sell.offerPrice;
-    const cur = fillAt(output, 'sell', pos.sell.qty, offer, opts);
+    const cur = fillAtS(output, 'sell', pos.sell.qty, offer, opts);
     const remaining = Math.max(MIN_BUDGET, (pos.sell.placedAt + opts.sellWithinHours * 3600 * 1000 - now) / 1000);
     const base = { breakEven, median: cur.median, projectedProfit: profitAt(offer),
       checkInSeconds: Math.round(Math.max(120, Math.min(1800, cur.median / 4))) };

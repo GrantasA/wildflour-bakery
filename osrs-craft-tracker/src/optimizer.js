@@ -5,7 +5,7 @@ const { priceMoveRisk, warnings } = require('./risk');
 const { taxPerItem } = require('./tax');
 
 const DEFAULTS = {
-  share: 0.5,          // fraction of matching market flow your offer captures
+  share: 0.33,         // fraction of matching market flow your offer captures (others queue ahead of you)
   maxWaitHours: 24,    // ignore plans slower than this
   sellWithinHours: 2,  // list at a price that sells within this, even in the slow case
   riskAversion: 0.4,   // 0 = chase the average, 1 = weigh the bad case fully
@@ -56,9 +56,12 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
   const revenue = sell.price * outQty;
   const taxTotal = taxEach * outQty;
   const profit = netEach * outQty - cost;
-  const buySeconds = Math.max(...buys.map((b) => b.median));
+  // timeFactor: learned from how long your real offers took vs what we predicted
+  const tf = opts.timeFactor || 1;
+  const buySeconds = Math.max(...buys.map((b) => b.median)) * tf;
+  const sellSeconds = sell.median * tf;
   const craftSeconds = (recipe.craftSeconds || 3) * n;
-  const seconds = buySeconds + craftSeconds + sell.median;
+  const seconds = buySeconds + craftSeconds + sellSeconds;
   // Time you actually spend at the keyboard: placing/collecting offers and
   // crafting. GE waiting is passive, so it doesn't count here.
   const activeSeconds = craftSeconds + OFFER_SECONDS * (inputs.length + 1);
@@ -78,12 +81,12 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
       name: inp.item.name, id: inp.item.id, icon: inp.item.icon, qty: inp.qty * n, price: buys[i].price,
       expectedCost: buys[i].cost ?? null, ai: !!buys[i].ai, pFill: buys[i].pFill ?? null,
       windowSec: buys[i].windowSec ?? null,
-      median: buys[i].median, p90: buys[i].p90,
+      median: buys[i].median * tf, p90: buys[i].p90 * tf,
       instaBuy: inp.item.latest.high, instaSell: inp.item.latest.low,
     })),
     sell: { name: output.name, id: output.id, icon: output.icon, qty: outQty, price: sell.price, tax: taxEach,
       expectedNet: sell.net ?? null, ai: !!sell.ai, pFill: sell.pFill ?? null,
-      median: sell.median, p90: sell.p90, instaBuy: output.latest.high, instaSell: output.latest.low },
+      median: sellSeconds, p90: sell.p90 * tf, instaBuy: output.latest.high, instaSell: output.latest.low },
     cost, revenue, taxTotal, profit,
     profitPerCraft: profit / n,
     buySeconds, seconds,
@@ -93,6 +96,7 @@ function evaluatePlan(recipe, inputs, output, n, buys, sell, opts = DEFAULTS) {
     profitPerActiveHour: profit / (activeSeconds / 3600),
     roi: cost > 0 ? profit / cost : 0,
     badProfit, pLoss, riskAdjusted,
+    timeFactor: tf,
     riskSource: move ? move.source : null,
   };
 }
@@ -115,10 +119,9 @@ function aiBuyCurve(advisor, item, qty, maxSec, opts) {
   for (const w of windows) {
     const a = advisor(item, qty, w);
     if (!a) continue;
-    // expected time: fills at its typical time, otherwise you buy at the end of the window
-    const fillT = Number.isFinite(a.median) ? a.median : w;
-    const t = Math.max(60, a.pFill * fillT + (1 - a.pFill) * w, limitSec);
-    pts.push({ price: a.price, cost: a.expected, median: t, p90: Math.max(w, limitSec), pFill: a.pFill, ai: true, windowSec: w });
+    // a.median already includes buying at market (which also takes time) if the offer doesn't fill
+    const t = Math.max(60, a.median, limitSec);
+    pts.push({ price: a.price, cost: a.expected, median: t, p90: Math.max(a.p90, limitSec), pFill: a.pFill, ai: true, windowSec: w });
   }
   if (!pts.length) return null;
   pts.sort((a, b) => a.median - b.median || a.cost - b.cost);
@@ -209,9 +212,8 @@ function evaluateAtBatch(recipe, getItem, opts) {
   if (!ai) {
     sellChoices = sellOptions(output, recipe.output.qty * n, opts, undefined, undefined, sellCurve).points;
   } else {
-    const w = opts.sellWithinHours * 3600;
-    const t = Math.max(60, ai.pFill * (Number.isFinite(ai.median) ? ai.median : w) + (1 - ai.pFill) * w);
-    sellChoices = [{ price: ai.price, net: ai.expected, bad: ai.bad, median: t, p90: w, pFill: ai.pFill, ai: true }];
+    // ai.median includes dumping at market (which also takes time) if it doesn't sell
+    sellChoices = [{ price: ai.price, net: ai.expected, bad: ai.bad, median: Math.max(60, ai.median), p90: ai.p90, pFill: ai.pFill, ai: true }];
   }
   const empty = [...buyCurves.map((c, i) => [c, inputs[i].item.name]), [sellCurve, output.name]]
     .filter(([c]) => c.points.length === 0).map(([, name]) => name);

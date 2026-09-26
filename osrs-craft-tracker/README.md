@@ -68,8 +68,10 @@ The app treats these as follows:
    to sell at P or less. The app replays the recent history, starting a hypothetical offer at
    every point in the window, and measures how long it takes to collect the full quantity. It
    reports the **median** and the **p90** (slow case) of those times.
-   - You only capture part of that volume, because other players compete for it. The
-     **Market share** setting controls how much. Lower values give more conservative waits.
+   - You only capture part of that volume, because other players' offers queue ahead of
+     yours. The app assumes you get a third of it.
+   - When a 5-minute average matches your price, only part of that bucket's volume counts
+     (about half at the average, all of it once your price is 1% better).
    - Thinly traded items (for example an etched elder venator fang, or oathplate shards in
      large quantities) switch to hourly history, and the row is flagged.
    - History is shifted onto today's price level, so a week-old dip doesn't show up as a
@@ -115,6 +117,16 @@ The app treats these as follows:
 
    The "last buy/sell price" figures are the most recent trades, not guaranteed instant
    fills. The AI treats them as just another price with its own chance of filling.
+
+   **Honest times.** If an offer doesn't fill in its window you have to trade at the market,
+   and that takes time too, about as long as the market needs to move your quantity. That
+   is included, so an estimate can be longer than your timeframe when that's the truth.
+
+   **Learns your real fill times.** Each offer placed at a suggested price is recorded with its
+   predicted time. When you click **Bought** or **Sold**, the real time is compared with the
+   prediction. The typical ratio becomes a correction applied to every time estimate and to
+   gp/h. It's pulled towards 1× while there are only a few fills, and the AI bar shows it.
+   Click Bought and Sold promptly: late clicks make offers look slower than they were.
 
    **It checks itself and learns.** Every suggestion it makes is written to
    `data/ai-journal.jsonl`. Once the window has passed, it reads the real chart for that

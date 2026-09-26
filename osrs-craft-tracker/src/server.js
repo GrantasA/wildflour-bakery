@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { PriceStore } = require('./prices');
 const { evaluateRecipe, DEFAULTS } = require('./optimizer');
-const { PositionStore, stats } = require('./positions');
+const { PositionStore, stats, timingFactor } = require('./positions');
 const { rankCrafts, advise } = require('./copilot');
 const { PriceAI } = require('./ai');
 const { Journal } = require('./journal');
@@ -250,6 +250,8 @@ function parseSettings(q) {
     maxActive: 15, // "least work": no craft needing more than 15 min of clicking per batch
     slots: 8,
     useAI: q.get('ai') !== '0',
+    // learned from your real fills: how much longer offers take than predicted
+    timeFactor: timingFactor(positions.list()).factor,
   };
 }
 
@@ -368,7 +370,20 @@ async function handlePositions(req, res, url) {
     return sendJson(res, 200, pos);
   }
   positionsRev++;
-  const pos = positions.act(m[1], body);
+  let predictedSec = null;
+  if (body.action === 'reprice-buy' || body.action === 'list') {
+    const cur = positions.get(m[1]);
+    if (cur && state.lastRefresh) {
+      try {
+        const a = advise(cur, recipeById(cur.recipeId), (n) => store.getItem(n),
+          { ...settings, sellAdvisor: advisorFor(settings, 'sell'), buyAdvisor: advisorFor(settings, 'buy') });
+        const tf = settings.timeFactor || 1;
+        const sug = body.action === 'list' ? a : (a.inputs || [])[body.index];
+        if (sug && sug.price === Math.round(Number(body.price)) && Number.isFinite(sug.median)) predictedSec = sug.median / tf;
+      } catch (e) { logError('predict', e); }
+    }
+  }
+  const pos = positions.act(m[1], { ...body, predictedSec });
   return sendJson(res, 200, pos || { deleted: true });
 }
 
@@ -409,6 +424,7 @@ const server = http.createServer((req, res) => {
       positions: positionsView(settings),
       ai: aiStatus(settings),
       stats: stats(positions.list()),
+      timing: timingFactor(positions.list()),
       memory: store.memoryStats(),
     };
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });

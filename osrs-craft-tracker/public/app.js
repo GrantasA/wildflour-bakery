@@ -134,7 +134,9 @@ const gphOf = (r) => (r.status === 'ok' ? r.plan.riskAdjusted / Math.max(r.plan.
 const resultsById = () => new Map((data?.results || []).map((r) => [r.id, r]));
 const maxActiveSec = () => 15 * 60; // "least work": at most 15 minutes of clicking per batch
 // Crafts that need more of your own time than the limit are left out everywhere.
-const tooMuchWork = (r) => r.status === 'ok' && r.plan.activeSeconds > maxActiveSec();
+// batches must fit the clicking limit; one long craft (e.g. an oathplate piece) is allowed up to an hour
+const tooMuchWork = (r) => r.status === 'ok' && r.plan.activeSeconds > maxActiveSec() &&
+  !(r.batch === 1 && r.plan.activeSeconds <= 3600);
 
 // ---------- render ----------
 function render() {
@@ -480,7 +482,8 @@ function rowHtml(r) {
   }
   const p = r.plan;
   const floor = data.slotPlan ? data.slotPlan.minGph : 0;
-  const allFlags = [...r.flags, ...(r.viable && gphOf(r) < floor ? [`under ${gp(floor)} gp/h: not worth the clicks`] : [])];
+  const allFlags = [...r.flags, ...(r.viable && gphOf(r) < floor ? [`under ${gp(floor)} gp/h: not worth the clicks`] : []),
+    ...(r.status === 'ok' && r.plan.activeSeconds > maxActiveSec() ? [`~${dur(r.plan.activeSeconds)} of your time per piece`] : [])];
   const flags = allFlags.length ? `<div class="flagline">${allFlags.map((f) => `<span class="flag">${esc(f)}</span>`).join('')}</div>` : '';
   const g = gphOf(r);
   const share = Math.max(0, Math.min(100, (100 * g) / Math.max(1, topGph)));
@@ -517,7 +520,7 @@ function effortText(p) {
   const e = p.effort;
   if (!e) return '';
   const secs = (x) => (x < 60 ? `${Math.round(x)}s` : dur(x));
-  const steps = (e.steps || []).map(([k, c = 1]) => (c === 1 ? k : `${c}× ${k}`)).join(' + ');
+  const steps = (e.steps || []).map(([k, c = 1]) => (k === 'seconds' ? `${dur(c)} of work` : c === 1 ? k : `${c}× ${k}`)).join(' + ');
   const parts = [];
   if (e.travel) parts.push(`walk to the ${e.station} and back ${secs(e.travel)}`);
   parts.push(`${e.bankTrips} bank trip${e.bankTrips === 1 ? '' : 's'} ${secs(e.bankSeconds)}`);

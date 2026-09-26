@@ -21,8 +21,12 @@ const STEP_SECONDS = {
   enchant: 3 * TICK,   // cast an enchant spell
   altar: 5 * TICK,     // bless / attach a sigil at an altar
   craft: 3 * TICK,     // other one-click crafting
+  seconds: 1,          // ["seconds", N]: N extra seconds of hands-on work per craft
 };
 const BANK_TRIP = 15;            // open bank, deposit, withdraw, close
+// A single craft may take longer than the per-batch clicking limit (e.g. an
+// oathplate piece, ~15+ min); it's still allowed as a batch of one, up to this.
+const MAX_SINGLE_CRAFT_SECONDS = 60 * 60;
 const TRAVEL = {                 // there and back, once per batch
   none: 0,
   anvil: 60,
@@ -75,4 +79,11 @@ function breakdown(recipe, n) {
   };
 }
 
-module.exports = { craftTime, maxCraftsWithin, breakdown, stepSeconds, STEP_SECONDS, BANK_TRIP, TRAVEL };
+// Is this plan's hands-on time acceptable? Batches must fit the limit; a
+// single long craft (batch of one) is allowed up to MAX_SINGLE_CRAFT_SECONDS.
+function withinClickLimit(batch, activeSeconds, limitSeconds) {
+  return activeSeconds <= limitSeconds || (batch === 1 && activeSeconds <= MAX_SINGLE_CRAFT_SECONDS);
+}
+
+module.exports = { craftTime, maxCraftsWithin, breakdown, stepSeconds, withinClickLimit,
+  STEP_SECONDS, BANK_TRIP, TRAVEL, MAX_SINGLE_CRAFT_SECONDS };

@@ -207,3 +207,15 @@ test('"check every" = how often you can change offers, not how long you will wai
   assert.ok(r.maxBatch <= Math.floor(0.33 * 32), `max ${r.maxBatch}`); // a day's realistic share
   assert.ok(r.plan.buySeconds > 3600, 'honest: buying a 32/day item takes hours');
 });
+
+test('oathplate takes 15+ minutes of your time per piece and is still allowed as a single craft', () => {
+  const { craftTime, withinClickLimit } = require('../src/effort');
+  const recipes = require('../src/recipes.json').recipes;
+  for (const id of ['oathplate-helm', 'oathplate-chest', 'oathplate-legs']) {
+    const r = recipes.find((x) => x.id === id);
+    assert.ok(craftTime(r, 1) >= 15 * 60, `${id}: ${craftTime(r, 1)}s`);
+    assert.ok(craftTime(r, 2) >= 30 * 60);
+    assert.ok(withinClickLimit(1, craftTime(r, 1) + 45, 15 * 60), 'one piece is allowed');
+    assert.ok(!withinClickLimit(2, craftTime(r, 2) + 45, 15 * 60), 'two pieces exceed the limit');
+  }
+});

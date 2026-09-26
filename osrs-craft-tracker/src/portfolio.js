@@ -1,6 +1,7 @@
 'use strict';
 
 const { costOf } = require('./positions');
+const { withinClickLimit } = require('./effort');
 
 // GP / slot planner: what to run in your free GE slots with your free GP so the
 // total gp/h is as high as possible.
@@ -51,7 +52,7 @@ function eligible(results, busyItems, maxActiveMinutes) {
   // only unique crafts are suggested; bulk processing (herbs, bolts, bars...)
   // means hours of clicking and isn't what this tool is for
   return results.filter((r) => r.status === 'ok' && r.type !== 'processing' && r.viable && r.plan.riskAdjusted > 0 &&
-    r.plan.activeSeconds <= maxActiveMinutes * 60 &&
+    withinClickLimit(r.batch, r.plan.activeSeconds, maxActiveMinutes * 60) &&
     !(r.warnings || []).some((w) => w.kind === 'spike' || w.kind === 'crash') &&
     !itemsOf(r).some((n) => busyItems.has(n)));
 }
@@ -186,7 +187,7 @@ function whyNot({ results, suggested, busyItems, maxActiveMinutes, freeGp, floor
     else if (warn) reason = `${warn.item}: ${warn.text}`;
     else if (!(r.plan.riskAdjusted > 0)) reason = `too risky for your risk setting (bad case ${fmtGp(r.plan.badProfit)}, ${Math.round(r.plan.pLoss * 100)}% chance of a loss)`;
     else if (!r.viable) reason = r.flags[0] || 'not viable right now';
-    else if (r.plan.activeSeconds > maxActiveMinutes * 60) reason = 'needs more than 15 minutes of clicking';
+    else if (!withinClickLimit(r.batch, r.plan.activeSeconds, maxActiveMinutes * 60)) reason = 'needs too much clicking';
     else if (itemsOf(r).some((n) => busyItems.has(n))) reason = 'shares an item with one of your open trades';
     else if (perCraft > freeGp) reason = `needs ~${fmtGp(perCraft)} GP per craft, you have ${fmtGp(freeGp)} free`;
     else if (gph(r) < floor) reason = `only ${fmtGp(gph(r))} gp/h after risk (under ${fmtGp(floor)})`;

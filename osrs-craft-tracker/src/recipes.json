@@ -1,17 +1,17 @@
 {
-  "_comment": "Crafts built only from GE-tradeable inputs. Recipes are 'unique' crafts (combining or upgrading a few high-value items, one or two clicks each) unless marked \"type\": \"processing\" (bulk skilling: herbs, potions, bolts, bars...). Only unique crafts are ever suggested; processing ones are listed in the table for reference. Item names must match the OSRS Wiki price API /mapping names (case-insensitive). 'coins' is a flat per-craft coin cost (e.g. tanning fee). Hands-on time (see src/effort.js): 'steps' are the actions per craft as [kind, count] (combine, chisel, anvil, furnace, string, enchant, altar, craft), 'perInventory' is how many crafts fit in one inventory (one bank trip each), 'station' is where you have to go once per batch (none, anvil, furnace, altar, karuulm). Add your own recipes here; the tracker reloads this file on every refresh.",
+  "_comment": "Crafts built only from GE-tradeable inputs. Recipes are 'unique' crafts (combining or upgrading a few high-value items, one or two clicks each) unless marked \"type\": \"processing\" (bulk skilling: herbs, potions, bolts, bars...). Only unique crafts are ever suggested; processing ones are listed in the table for reference. Item names must match the OSRS Wiki price API /mapping names (case-insensitive). 'coins' is a flat per-craft coin cost (e.g. tanning fee). Hands-on time (see src/effort.js): 'steps' are the actions per craft as [kind, count] (combine, chisel, anvil, furnace, string, enchant, altar, craft; or [\"seconds\", N] for N extra seconds of hands-on work), 'perInventory' is how many crafts fit in one inventory (one bank trip each), 'station' is where you have to go once per batch (none, anvil, furnace, altar, karuulm). Add your own recipes here; the tracker reloads this file on every refresh.",
   "recipes": [
     { "id": "oathplate-helm", "category": "Smithing", "skills": "83 Smithing, 78 Mining",
-      "steps": [["combine", 9], ["anvil", 1]], "perInventory": 26, "station": "anvil",
+      "steps": [["combine", 9], ["anvil", 1], ["seconds", 900]], "perInventory": 26, "station": "anvil",
       "inputs": [{ "item": "Oathplate shards", "qty": 450 }, { "item": "Crushed infernal shale", "qty": 2520 }],
       "output": { "item": "Oathplate helm", "qty": 1 },
-      "notes": "Shards + crushed shale -> 9 infernal plates -> one armour piece." },
+      "notes": "Shards + crushed shale -> 9 infernal plates -> one armour piece. About 15+ minutes of hands-on work per piece." },
     { "id": "oathplate-chest", "category": "Smithing", "skills": "83 Smithing, 78 Mining",
-      "steps": [["combine", 9], ["anvil", 1]], "perInventory": 26, "station": "anvil",
+      "steps": [["combine", 9], ["anvil", 1], ["seconds", 900]], "perInventory": 26, "station": "anvil",
       "inputs": [{ "item": "Oathplate shards", "qty": 450 }, { "item": "Crushed infernal shale", "qty": 2520 }],
       "output": { "item": "Oathplate chest", "qty": 1 } },
     { "id": "oathplate-legs", "category": "Smithing", "skills": "83 Smithing, 78 Mining",
-      "steps": [["combine", 9], ["anvil", 1]], "perInventory": 26, "station": "anvil",
+      "steps": [["combine", 9], ["anvil", 1], ["seconds", 900]], "perInventory": 26, "station": "anvil",
       "inputs": [{ "item": "Oathplate shards", "qty": 450 }, { "item": "Crushed infernal shale", "qty": 2520 }],
       "output": { "item": "Oathplate legs", "qty": 1 } },
 

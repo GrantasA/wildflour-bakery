@@ -7,7 +7,42 @@ It can watch:
 - **a single point**: the icon is always in the same place, or
 - **an area**: the icon can show up anywhere inside a box you choose, and it clicks wherever the color appears.
 
-## Setup (once)
+## The app (recommended)
+
+`color_clicker_app.py` is a window with Start/Pause, a live view of what it sees, and a log.
+
+```
+pip install pyautogui pillow numpy
+python color_clicker_app.py
+```
+
+1. **Select area...**: your screen freezes; drag a box around where the icon shows up. Works on any monitor.
+2. **Pick color...**: click the color you're waiting for. A magnifier shows the exact pixel. You can also type a hex code.
+3. **Start**, or press **F6**. Press F6 again to pause. On Windows, F6 works even while a game is focused.
+
+**Live view:** shows the area, paints matching pixels bright, and puts a crosshair where it will click.
+When nothing matches, it tells you the closest color it sees and how far off it is, so you can tell whether to raise the tolerance.
+**Test click:** clicks the area once right now, so you can check that clicks get through at all.
+Your area, color and settings are remembered for next time.
+
+### Not clicking?
+
+- **Live view says "Color not found":** the color is off. Pick the color again while the icon is showing it, or raise
+  **Color tolerance** to the number it suggests. Glowing or animated icons often need 40-60.
+- **"COLOR FOUND" but nothing happens in the game:**
+  - Press **Test click**. If that doesn't work either, the game is ignoring the clicks.
+  - If the game runs as administrator, Windows blocks clicks from normal programs.
+    Open your terminal with **Run as administrator** and start the app from there.
+  - Raise **Click hold (ms)** to 100-150. Some games ignore very quick clicks.
+  - Some games with anti-cheat block simulated clicks completely, and may ban for them.
+- **It clicked once, then stopped:** by default it clicks once each time the color *appears*.
+  Tick **Keep clicking while the color stays** to keep clicking.
+
+## Command-line version
+
+`color_clicker.py` does the same without a window.
+
+### Setup (once)
 
 ```
 pip install pyautogui pillow numpy
@@ -19,7 +54,7 @@ pip install pyautogui pillow numpy
 - **Linux:** you also need tkinter (`sudo apt install python3-tk`); pyautogui quits on startup without it.
 - **Windows:** nothing extra.
 
-## Use it
+### Use it
 
 ```
 python color_clicker.py
@@ -39,7 +74,7 @@ python color_clicker.py --area 600 300 1000 600 --color "#3ec46d"
 
 **To stop it:** press Ctrl+C, or move the mouse into the top-left corner of the screen.
 
-## Options
+### Options
 
 | Option | Default | What it does |
 |---|---|---|

@@ -11,6 +11,11 @@ It can watch:
 
 `color_clicker_app.py` is a window with Start/Pause, a live view of what it sees, and a log.
 
+**Windows:** keep `Color Clicker.bat` in the same folder as `color_clicker_app.py` and double-click it.
+The first time, it installs what's needed. After that it just opens the app.
+
+Or from a terminal:
+
 ```
 pip install pyautogui pillow numpy
 python color_clicker_app.py

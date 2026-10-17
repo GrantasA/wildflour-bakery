@@ -6,7 +6,7 @@ Setup (once):
     pip install pyautogui pillow numpy
 
 Run:
-    python color_clicker_app.py
+    double-click "Color Clicker.bat" (Windows), or: python color_clicker_app.py
 
 1. "Select area..." and drag a box around where the icon shows up.
 2. "Pick color..." and click on the color you're waiting for (or type a hex code).
@@ -644,7 +644,17 @@ class App:
 
 def main():
     root = tk.Tk()
-    App(root)
+
+    # Started by double-click there's no console, so show errors in a popup instead.
+    def report(*exc):
+        import traceback
+        messagebox.showerror("Color Clicker - error", "".join(traceback.format_exception(*exc))[-1500:])
+    root.report_callback_exception = report
+    try:
+        App(root)
+    except Exception:
+        report(*sys.exc_info())
+        raise
     root.mainloop()
 
 

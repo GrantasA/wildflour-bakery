@@ -45,29 +45,50 @@ def to_hex(rgb):
     return "#{:02x}{:02x}{:02x}".format(*(int(c) for c in rgb))
 
 
-def screen_scale():
-    """Screenshots can be bigger than mouse coordinates (Retina / HiDPI displays)."""
-    return ImageGrab.grab().width / pyautogui.size().width
-
-
-def grab(left, top, right, bottom, scale):
-    """RGB pixels of a box given in mouse coordinates (inclusive), as a numpy array."""
+def capture():
+    """
+    Screenshot of the screen(s), plus the mouse position of its top-left pixel
+    and how many screenshot pixels there are per mouse unit.
+    """
+    if sys.platform == "win32":
+        # Capture every monitor. The virtual desktop can start at negative
+        # coordinates when a monitor sits left of / above the main one.
+        import ctypes
+        metric = ctypes.windll.user32.GetSystemMetrics
+        return ImageGrab.grab(all_screens=True), (metric(76), metric(77)), 1.0
+    # macOS screenshots are bigger than mouse coordinates on Retina displays.
     shot = ImageGrab.grab()
+    return shot, (0, 0), shot.width / pyautogui.size().width
+
+
+def grab(left, top, right, bottom):
+    """
+    RGB pixels of a box given in mouse coordinates (inclusive), as a numpy array,
+    plus a function that turns a pixel (column, row) back into mouse coordinates.
+    """
+    shot, (ox, oy), scale = capture()
     box = (
-        max(int(left * scale), 0),
-        max(int(top * scale), 0),
-        min(int((right + 1) * scale), shot.width),
-        min(int((bottom + 1) * scale), shot.height),
+        max(int((left - ox) * scale), 0),
+        max(int((top - oy) * scale), 0),
+        min(int((right + 1 - ox) * scale), shot.width),
+        min(int((bottom + 1 - oy) * scale), shot.height),
     )
-    return np.asarray(shot.crop(box).convert("RGB"), dtype=np.int16), box
+    if box[0] >= box[2] or box[1] >= box[3]:
+        sys.exit(f"The area ({left}, {top})-({right}, {bottom}) is outside the screen that "
+                 f"could be captured ({shot.width}x{shot.height} starting at {ox}, {oy}).")
+
+    def to_mouse(col, row):
+        return int(ox + (box[0] + col) / scale), int(oy + (box[1] + row) / scale)
+
+    return np.asarray(shot.crop(box).convert("RGB"), dtype=np.int16), to_mouse
 
 
-def find_color(left, top, right, bottom, target, tolerance, min_pixels, scale):
+def find_color(left, top, right, bottom, target, tolerance, min_pixels):
     """
     Look for the target color inside the box.
     Returns (x, y, color_seen) in mouse coordinates, or None if not found.
     """
-    pixels, box = grab(left, top, right, bottom, scale)
+    pixels, to_mouse = grab(left, top, right, bottom)
     # A pixel matches when every channel is within `tolerance` of the target.
     diff = np.abs(pixels - np.array(target, dtype=np.int16)).max(axis=2)
     ys, xs = np.nonzero(diff <= tolerance)
@@ -77,19 +98,17 @@ def find_color(left, top, right, bottom, target, tolerance, min_pixels, scale):
     # so we hit the icon itself rather than a stray edge pixel.
     cx, cy = xs.mean(), ys.mean()
     i = int(np.argmin((xs - cx) ** 2 + (ys - cy) ** 2))
-    seen = pixels[ys[i], xs[i]]
-    x = int((box[0] + xs[i]) / scale)
-    y = int((box[1] + ys[i]) / scale)
-    return x, y, seen
+    x, y = to_mouse(xs[i], ys[i])
+    return x, y, pixels[ys[i], xs[i]]
 
 
-def sample_under_mouse(scale):
+def sample_under_mouse():
     x, y = pyautogui.position()
-    pixels, _ = grab(x, y, x, y, scale)
+    pixels, _ = grab(x, y, x, y)
     return pixels.reshape(-1, 3).mean(axis=0).astype(int)
 
 
-def interactive_setup(scale):
+def interactive_setup():
     mode = input("Watch a single [p]oint or an [a]rea? (p/a, default p): ").strip().lower()
 
     if mode.startswith("a"):
@@ -112,7 +131,7 @@ def interactive_setup(scale):
         "Type the target hex color (e.g. #00ff00), or hover over something that already\n"
         "has that color and press Enter to sample it: "
     ).strip()
-    color = parse_hex(answer) if answer else tuple(sample_under_mouse(scale))
+    color = parse_hex(answer) if answer else tuple(sample_under_mouse())
     print(f"  Target color: {to_hex(color)}")
     print(f"\nTip: next time skip setup with:\n"
           f"  python {sys.argv[0]} {area_args} --color \"{to_hex(color)}\"\n")
@@ -144,8 +163,6 @@ def main():
                     help="Move the mouse back to where it was after clicking")
     args = ap.parse_args()
 
-    scale = screen_scale()
-
     if args.color and args.area:
         left, top, right, bottom = args.area
         left, right = sorted((left, right))
@@ -156,7 +173,7 @@ def main():
         top = bottom = args.y
         target = parse_hex(args.color)
     else:
-        (left, top, right, bottom), target = interactive_setup(scale)
+        (left, top, right, bottom), target = interactive_setup()
 
     is_area = (left, top) != (right, bottom)
     if not is_area:
@@ -175,7 +192,7 @@ def main():
     was_matching = False
     try:
         while True:
-            found = find_color(left, top, right, bottom, target, args.tolerance, min_pixels, scale)
+            found = find_color(left, top, right, bottom, target, args.tolerance, min_pixels)
             matching = found is not None
             should_click = matching and (args.repeat or not was_matching)
 
